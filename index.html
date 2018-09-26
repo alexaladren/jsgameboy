@@ -1,0 +1,100 @@
+<!--
+
+JS GameBoy Emulator v.1.0
+Copyright (C) 2013 Alejandro Aladrén <alex@alexaladren.net> 
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+-->
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+
+		<!-- Always force latest IE rendering engine (even in intranet) & Chrome Frame
+		Remove this if you use the .htaccess -->
+		<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
+
+		<title>JS GameBoy Emulator</title>
+		<meta name="description" content="" />
+		<meta name="author" content="Alex" />
+
+		<meta name="viewport" content="width=device-width; initial-scale=1.0" />
+
+		<!-- Replace favicon.ico & apple-touch-icon.png in the root of your domain and delete these references -->
+		<link rel="stylesheet" href="style.css" />
+		<link rel="shortcut icon" href="/favicon.ico" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		
+		<script src="Z80.js"></script>
+		<script src="GameBoy.js"></script>
+		<script src="emulator.js"></script>
+	</head>
+
+	<body>
+		<div id="wrapper">
+			<header>
+				<h1>JS GameBoy Emulator</h1>
+			</header>
+
+			<div class="left-column">
+			
+				<div class="box display">
+					<canvas id="display" width="320" height="288" onclick="pause()"></canvas>
+					<div id="fps"></div>
+				</div>
+				<div class="box controls">
+					<table>
+						<tr>
+							<td>Q</td><td>Select</td>
+							<td>W</td><td>Start</td>
+							<td>A</td><td>B</td>
+							<td>S</td><td>A</td>
+						</tr>
+						<tr>
+							<td>&uarr;</td><td>Up</td>
+							<td>&darr;</td><td>Down</td>
+							<td>&larr;</td><td>Left</td>
+							<td>&rarr;</td><td>Right</td>
+						</tr>
+					</table>
+				</div>
+				<div class="copyright">
+					<a href="http://www.alexaladren.net">Alejandro Aladr&eacute;n</a> |
+					<a href="mailto:alex@alexaladren.net">alex@alexaladren.net</a> | 
+					<a href="http://www.gnu.org/licenses/">GPL v.3</a> |
+					<a href="https://github.com/alexaladren/jsgameboy">GitHub</a>
+				</div>
+				
+			</div>
+			<div class="right-column">
+			
+				<div class="box select">
+					<div id="romlist">
+						
+					</div>
+					<div class="button" id="addfrompc" onclick="addROMfromComputer(event)">Add a ROM from your PC</div>
+				</div>
+				
+				<div class="box data" id="cartridge-data" style="display: none;">
+					<div id="title" class="title"></div>
+					<div id="cartridge"></div>
+					<input type="button" id="save" value="Guardar" onclick="saveCartridgeRam()" style="display: none;" />
+					<input type="button" id="delete" value="Eliminar partida" onclick="deleteCartridgeRam()" style="display: none;" />
+				</div>
+				
+			</div>
+		</div>
+	</body>
+</html>

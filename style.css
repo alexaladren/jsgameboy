@@ -1,0 +1,143 @@
+/*
+
+JS GameBoy Emulator v.1.0
+Copyright (C) 2013 Alejandro Aladrén <alex@alexaladren.net> 
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+ */
+
+@import "http://fonts.googleapis.com/css?family=Open+Sans:400,700,400italic,700italic,600,600italic";
+
+body{
+	font-family: 'Open Sans', Arial, Helvetica, sans-serif;
+	font-size: 14px;
+}
+
+h1{
+	background: #f2f8ff;
+	background: -moz-linear-gradient(top, #ffffff, #f2f8ff);
+	padding: 10px;
+	margin: 5px;
+	border: 1px solid #80bfff;
+	border-radius: 5px;
+	box-shadow: 0 3px 5px #f2f9ff;
+	text-align: center;
+	font-weight: normal;
+	letter-spacing: 2px;
+}
+
+#wrapper{
+	width: 600px;
+	margin: 0 auto;
+}
+
+.left-column{
+	float: left;
+	width: 355px;
+}
+
+.right-column{
+	float:right;
+	width: 230px;
+}
+
+.box{
+	background: #cce5ff;
+	background: -moz-linear-gradient(top, #e5f2ff, #cce5ff);
+	padding: 10px;
+	margin: 5px;
+	border: 1px solid #0080ff;
+	border-radius: 5px;
+	box-shadow: 0 3px 5px #e5f2ff;
+}
+
+.title{
+	text-align: center;
+	font-weight: bold;
+	margin-bottom: 5px;
+}
+
+.button{
+	background: #e5f2ff;
+	cursor: pointer;
+	font-size: 12px;
+	margin-top: 5px;
+	padding: 3px;
+	border: 1px solid #80bfff;
+	border-radius: 3px;
+	text-align: center;
+	box-shadow: 0 0 0 1px white inset;
+}
+.button:hover{
+	background: #f2f9ff;
+}
+
+.box.display{
+	text-align: right;
+	position: relative;
+}
+#display{
+	background: white;
+	border: 1px solid #80bfff;
+}
+#fps {
+	font-size: 8px;
+	position: absolute;
+	left: 10px;
+	bottom: 2px;
+}
+
+.box.controls table{
+	width: 100%;
+}
+.box.controls table td:nth-child(2n+1){
+	margin: 3px 3px 3px 8px;
+	padding: 1px 5px;
+	background: #fafafa;
+	border: 1px solid #808080;
+	border-radius: 8px;
+	box-shadow: 0 -1px 3px #CCCCCC inset;
+	text-align: center;
+	font-size: 14px;
+}
+.box.controls table td:nth-child(2n){
+	font-size: 10px;
+	text-align: left;
+	text-transform: uppercase;
+}
+
+.copyright{
+	font-size: 12px;
+	margin: 0 0 8px 8px;
+}
+.copyright a{
+	color: #000000;
+	text-decoration: none;
+}
+
+#romlist div{
+	border-bottom: 1px solid #80bfff;
+	padding-left: 5px;
+	cursor: pointer;
+}
+#romlist div:hover{
+	background: rgba(255,255,255,0.4);
+}
+
+#cartridge{
+	text-align: right;
+	font-size: 12px;
+	font-style: italic;
+}
