@@ -18,16 +18,21 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
  */
 
-var GameBoy = function(rom){
+var GameBoy = function(rom, canvas){
    
    var _this = this;
    
-   this.COLOR0 = (255 << 24) | (255 << 16) | (255 << 8) | 255;
-   this.COLOR1 = (255 << 24) | (204 << 16) | (204 << 8) | 204;
-   this.COLOR2 = (255 << 24) | (153 << 16) | (153 << 8) | 153;
-   this.COLOR3 = (255 << 24) | (0 << 16) | (0 << 8) | 0;
+   this.COLORS = [
+      [255, 255, 255],
+      [204, 204, 204],
+      [153, 153, 153],
+      [0, 0, 0]
+   ];
+
+   this.LCD_WIDTH = 160;
+   this.LCD_HEIGHT = 144;
    
-   this.displaycanvas = null;
+   this.canvas = canvas;
    this.onFPS = null;
    
    var rommap = new Uint8Array(rom);
@@ -63,62 +68,15 @@ var GameBoy = function(rom){
    this.io8bit.fill(0);
    this.hram8bit = new Array(126);
    this.hram8bit.fill(0);
-   
-   this.bgMap = new Array();
-   this.bgModified = new Array();
-   for(var i = 0; i < 32; i++){
-      this.bgMap[i] = new Array();
-      this.bgModified[i] = new Array();
-      for(var j = 0; j < 32; j++){
-         this.bgMap[i][j] = -1;
-         this.bgModified[i][j] = new Date();
-      }
-   }
-   
-   this.bgCanvas = document.createElement("canvas");
-   this.bgCanvas.width = 256;
-   this.bgCanvas.height = 256;
-   this.bgCtx = this.bgCanvas.getContext("2d");
-   
-   this.winMap = new Array();
-   this.winModified = new Array();
-   for(var i = 0; i < 32; i++){
-      this.winMap[i] = new Array();
-      this.winModified[i] = new Array();
-      for(var j = 0; j < 32; j++){
-         this.winMap[i][j] = -1;
-         this.winModified[i][j] = new Date();
-      }
-   }
-   
-   this.winCanvas = document.createElement("canvas");
-   this.winCanvas.width = 256;
-   this.winCanvas.height = 256;
-   this.winCtx = this.winCanvas.getContext("2d");
-   
-   this.spriteMap = new Array();
-   this.spriteCanvas = new Array();
-   this.spriteCtx = new Array();
-   for(var i = 0; i < 40; i++){
-      this.spriteMap[i] = -1;
-      this.spriteCanvas[i] = document.createElement("canvas");
-      this.spriteCanvas[i].width = 8;
-      this.spriteCanvas[i].height = 16;
-      this.spriteCtx[i] = this.spriteCanvas[i].getContext("2d");
-   }
-   
-   this.tileBuffer = new ArrayBuffer(8*8*4);
-   this.tileBuffer32bit = new Uint32Array(this.tileBuffer);
-   this.tileModified = new Array();
-   for(var i = 0; i < 256; i++){
-      this.tileModified[i] = new Date();
-   }
+
+   this.lcd = new Int8Array(this.LCD_WIDTH * this.LCD_HEIGHT);
+   this.lcd.fill(0);
    
    this.intEnable = 0;
    
    this.lcdLine = 0;
    this.lcdMode = 0;
-   this.lcdstat = 0;
+   this.lcdStatus = 0;
    
    this.divider = 0;
    this.timer = 0;
@@ -136,7 +94,7 @@ var GameBoy = function(rom){
 
    this.init = function(){
       var _this = this;
-      this.interval = setTimeout(function(){_this.execute()}, 16);
+      this.interval = requestAnimationFrame(function(){_this.execute()});
       this.fpstime = new Date();
    }
 
@@ -158,9 +116,10 @@ var GameBoy = function(rom){
 
    this.execute = function(){
       var _this = this;
-      this.interval = setTimeout(function(){_this.execute()}, 16);
+      this.interval = requestAnimationFrame(function(){_this.execute()});
       // 4213440 ticks per second
       if(this.paused) return;
+      //console.time("frame");
       this.transferClock();
       for(var i = 0; i < 144; i++){
          this.LCDStatusSet(i, 2);
@@ -176,6 +135,7 @@ var GameBoy = function(rom){
          this.LCDStatusSet(i, 1);
          this.z80.execute(456);
       }
+      //console.timeEnd("frame");
    }
 
    this.LCDStatusSet = function(line, mode){
@@ -183,22 +143,25 @@ var GameBoy = function(rom){
       this.lcdMode = mode;
 
       if(this.lcdLine == this.io8bit[0x45]){ // LYC == LY ?
-         this.lcdstat |= 4;
-         if(this.lcdMode == 0 && this.lcdstat & 64){
+         this.lcdStatus |= 4;
+         if(this.lcdMode == 0 && this.lcdStatus & 64){
             this.LCDInt();
          };
       }else{
-         this.lcdstat &= ~4;
+         this.lcdStatus &= ~4;
       }
       
-      this.lcdstat &= ~3;
-      this.lcdstat |= mode;
+      this.lcdStatus &= ~3;
+      this.lcdStatus |= mode;
 
       if (this.lcdMode == 0) {
          if(this.io8bit[0x40] & 128) this.drawLine(this.lcdLine);
       }
 
       if (this.lcdLine == 144) {
+
+         this.drawScreenCanvas2D();
+
          this.fps++;
          if(this.fps == 60){
             if(this.onFPS != null) this.onFPS("FPS: "+Math.round(1000/((new Date()) - this.fpstime)));
@@ -206,7 +169,7 @@ var GameBoy = function(rom){
          }
          this.fpstime = new Date();
          this.vblankInt();
-         if(this.lcdstat & 16){
+         if(this.lcdStatus & 16){
             this.LCDInt()
          };
       }
@@ -343,12 +306,10 @@ var GameBoy = function(rom){
    }
    
    this.putAddress = function(address, data){
-      //console.log("Escribe memoria", address, data);
       if(address >= 0 && address < 0x2000){ // RAM enable
          if(data == 0) this.ramEnabled = 0;
          if(data == 0x0A) this.ramEnabled = 1;
       }else if(address >= 0x2000 && address < 0x4000){ // Cambio de banco ROM
-         //console.log("Cambio de banco a "+(data % 32), this.z80.PC);
          this.activeRomBank = data % 32;
       }else if(address >= 0x4000 && address < 0x6000){ // RAM Bank Number / Upper Bits of ROM Bank Number
          if(this.romRamMode == 0){ // ROM Mode
@@ -359,34 +320,20 @@ var GameBoy = function(rom){
       }else if(address >= 0x6000 && address < 0x8000){ // ROM/RAM Mode Select
          this.romRamMode = data & 1;
       }else if(address >= 0x8000 && address < 0xA000){ // Video RAM (8000-9FFF)
-         //if(data != 0) console.log("-- Escritura VRAM", address, data);
          this.vram8bit[address-0x8000] = data;
-         if(address >= 0x8800 && address < 0x9800){
-            var tile = Math.floor((address-0x9000)/16);
-            if(tile < 0) tile += 256;
-            this.tileModified[tile] = new Date();
-         }else if(address >= 0x8000 && address < 0x9000){
-            var tile = Math.floor((address-0x8000)/16);
-            this.tileModified[tile] = new Date();
-         }
       }else if(address >= 0xA000 && address < 0xC000){ // Cartridge RAM Bank (A000-BFFF)
          if(this.cartram == undefined || this.ramEnabled == 0) return;
          if((address - 0xA000 + this.activeRamBank*8192) >= this.cartram8bit.length) return;
          this.cartram8bit[address - 0xA000 + this.activeRamBank*8192] = data;
       }else if(address >= 0xC000 && address < 0xE000){ // Work RAM Banks (C000-DFFF)
          this.wram8bit[address-0xC000] = data;
-         var vramaddress = address-0xC000;
-         /////
       }else if(address >= 0xE000 && address < 0xFE00){ // Same as C000-DDFF
          this.wram8bit[address-0xE000] = data;
       }else if(address >= 0xFE00 && address < 0xFEA0){ // Sprite Attribute Table (OAM) (FE00-FE9F)
-         //if(data != 0) console.log("-- Escritura Sprite", address, data);
          this.spriteram8bit[address-0xFE00] = data;
       }else if(address >= 0xFF00 && address < 0xFF80){ // I/O (FF00-FF7F)
-         //console.log("-- Escritura E/S", Math.floor((address-0xFF00)/16), (address-0xFF00)%16, data, this.z80.RA);
          this.putIO(address % 0xFF00, data);
       }else if(address >= 0xFF80 && address <= 0xFFFE){ // High RAM / Stack (HRAM) (FF80-FFFE)
-         //console.log("-- Escritura HRAM", address-0xFF80, data, this.z80.reg16bit[this.z80.REG_PC]);
          this.hram8bit[address-0xFF80] = data;
       }else if(address == 0xFFFF){ // Interrupt Enable Register
          this.intEnable = data;
@@ -413,7 +360,7 @@ var GameBoy = function(rom){
       }else if(address == 0x05){
          return this.timer;
       }else if(address == 0x41){
-         return this.lcdstat;
+         return this.lcdStatus;
       }else if(address == 0x44){
          return this.lcdLine;
       }else{
@@ -457,29 +404,13 @@ var GameBoy = function(rom){
       }else if(address == 0x0F){
          this.io8bit[address] = data;
          this.checkForInterrupts();
-      }else if(address == 0x40){
-         this.io8bit[address] = data;
       }else if(address == 0x41){
-         this.lcdstat &= ~ 120;
-         this.lcdstat |= (data & ~135);
+         this.lcdStatus &= ~ 120;
+         this.lcdStatus |= (data & ~135);
       }else if(address == 0x46){
          for(var i = 0; i < 160; i++){
             this.putAddress(0xFE00 + i, this.getAddress((data << 8) + i));
          }
-      }else if(address == 0x47){
-         if(this.io8bit[0x47] != data){
-            for(var i = 0; i < this.bgMap.length; i++){
-               for(var j = 0; j < this.bgMap[i].length; j++){
-                  this.bgMap[i][j] = -1;
-               }
-            }
-            for(var i = 0; i < this.winMap.length; i++){
-               for(var j = 0; j < this.winMap[i].length; j++){
-                  this.winMap[i][j] = -1;
-               }
-            }
-         }
-         this.io8bit[0x47] = data;
       } else if (address == 0x0F) {
          this.io8bit[0x0F] = data;
          this.checkForInterrupts();
@@ -487,239 +418,171 @@ var GameBoy = function(rom){
          this.io8bit[address] = data;
       }
    }
-   
-   this.getPalette = function(){
-      var bgpalette = this.io8bit[0x47];
-      return new Array((2*(bgpalette & 2)/2 + (bgpalette & 1)/1), (2*(bgpalette & 8)/8 + (bgpalette & 4)/4),
-         (2*(bgpalette & 32)/32 + (bgpalette & 16)/16), (2*(bgpalette & 128)/128 + (bgpalette & 64)/64));
-   }
-   
-   this.getObj0Palette = function(){
-      var bgpalette = this.io8bit[0x48];
-      return new Array((2*(bgpalette & 2)/2 + (bgpalette & 1)/1), (2*(bgpalette & 8)/8 + (bgpalette & 4)/4),
-         (2*(bgpalette & 32)/32 + (bgpalette & 16)/16), (2*(bgpalette & 128)/128 + (bgpalette & 64)/64));
-   }
-   
-   this.getObj1Palette = function(){
-      var bgpalette = this.io8bit[0x49];
-      return new Array((2*(bgpalette & 2)/2 + (bgpalette & 1)/1), (2*(bgpalette & 8)/8 + (bgpalette & 4)/4),
-         (2*(bgpalette & 32)/32 + (bgpalette & 16)/16), (2*(bgpalette & 128)/128 + (bgpalette & 64)/64));
-   }
-   
-   this.remapBgMap = function(tiley){
-      if(this.io8bit[0x40] & 0x08){ // (0=9800-9BFF, 1=9C00-9FFF)
-         var offset = 0x1C00+tiley*32;
-      }else{
-         var offset = 0x1800+tiley*32;
+
+   this.drawLine = function (line) {
+      var lcdControl = this.io8bit[0x40];
+
+      if ((lcdControl & 0x80) == 0) {
+         return;
       }
-      for(var i = 0; i < 32; i++){
-         var tile = this.vram8bit[offset++];
-         if(tile != this.bgMap[i][tiley] || this.bgModified[i][tiley] < this.tileModified[tile]){
-            this.redrawTile(tile);
-            var imagedata = this.bgCtx.getImageData(i*8, tiley*8, 8, 8);
-            imagedata.data.set(new Uint8Array(this.tileBuffer));
-            this.bgCtx.putImageData(imagedata, i*8, tiley*8);
-            this.bgMap[i][tiley] = tile;
-            this.bgModified[i][tiley] = new Date();
-         }
-      }
-   }
-   
-   this.remapWindowMap = function(tiley){
-      if(this.io8bit[0x40] & 0x40){ // (0=9800-9BFF, 1=9C00-9FFF)
-         var baseaddress = 0x1C00;
-      }else{
-         var baseaddress = 0x1800;
-      }
-      var offset = baseaddress+tiley*32;
-      for(var i = 0; i < 32; i++){
-         var tile = this.vram8bit[offset++];
-         if(tile != this.winMap[i][tiley] || this.winModified[i][tiley] < this.tileModified[tile]){
-            this.redrawTile(tile);
-            var imagedata = this.winCtx.getImageData(i*8, tiley*8, 8, 8);
-            imagedata.data.set(new Uint8Array(this.tileBuffer));
-            this.winCtx.putImageData(imagedata, i*8, tiley*8);
-            this.winMap[i][tiley] = tile;
-            this.winModified[i][tiley] = new Date();
-         }
-      }
-   }
-   
-   this.redrawTile = function(tilenumber){
-      if(this.io8bit[0x40] & 0x10){ // (0=8800-97FF, 1=8000-8FFF)
-         var tile = tilenumber;
-         var baseaddress = 0;
-      }else{
-         var tile = (tilenumber >= 128 ? tilenumber - 256 : tilenumber);
-         var baseaddress = 0x1000;
-      }
-      var palette = this.getPalette();
-      var offset = 0;
-      for(var line = 0; line < 8; line++){
-         var lowerbyte = this.vram8bit[baseaddress+tile*16+line*2];
-         var upperbyte = this.vram8bit[baseaddress+tile*16+line*2+1];
-         for(var pixel = 7; pixel >= 0; pixel--){
-            var color = 2*((upperbyte & (1 << pixel)) / (1 << pixel)) + ((lowerbyte & (1 << pixel)) / (1 << pixel));
-            switch(palette[color]){
-               case 0:
-                  this.tileBuffer32bit[offset++] = this.COLOR0;
-                  break;
-               case 1:
-                  this.tileBuffer32bit[offset++] = this.COLOR1;
-                  break;
-               case 2:
-                  this.tileBuffer32bit[offset++] = this.COLOR2;
-                  break;
-               case 3:
-                  this.tileBuffer32bit[offset++] = this.COLOR3;
-                  break;
+
+      let bgTileMapArea = (lcdControl & 0x08 ? 0x9C00 : 0x9800) - 0x8000;
+      let winTileMapArea = (lcdControl & 0x40 ? 0x9C00 : 0x9800) - 0x8000;
+
+      let bigSprites = lcdControl & 0x04 ? true : false;
+      let spritesInLine = [];
+      if (lcdControl & 0x01) {
+         for (let i = 0; i < 40; i++) {
+            let spriteTop = this.spriteram8bit[i * 4] - 16;
+            if (line >= spriteTop && line < (spriteTop + (bigSprites ? 16 : 8))) {
+               spritesInLine.push(i);
             }
          }
       }
-   }
-   
-   this.redrawSpriteTile = function(tilenumber, palette){
-      var tile = tilenumber;
-      var baseaddress = 0;
-      var offset = 0;
-      for(var line = 0; line < 8; line++){
-         var lowerbyte = this.vram8bit[baseaddress+tile*16+line*2];
-         var upperbyte = this.vram8bit[baseaddress+tile*16+line*2+1];
-         for(var pixel = 7; pixel >= 0; pixel--){
-            var color = 2*((upperbyte & (1 << pixel)) / (1 << pixel)) + ((lowerbyte & (1 << pixel)) / (1 << pixel));
-            if(color == 0){
-               this.tileBuffer32bit[offset++] = (0 << 24) | (255 << 16) | (255 << 8) | 255;
+
+      for (let x = 0; x < this.LCD_WIDTH; x++) {
+
+         let color = -1;
+         let spriteUnderColor = -1;
+
+         // Sprites
+         for (let i = 0; i < spritesInLine.length; i++) {
+            let idx = spritesInLine[i];
+            let spriteX = this.spriteram8bit[idx * 4 + 1] - 8;
+            if (x < spriteX || x > (spriteX + 8)) {
                continue;
             }
-            switch(palette[color]){
-               case 0:
-                  this.tileBuffer32bit[offset++] = this.COLOR0;
-                  break;
-               case 1:
-                  this.tileBuffer32bit[offset++] = this.COLOR1;
-                  break;
-               case 2:
-                  this.tileBuffer32bit[offset++] = this.COLOR2;
-                  break;
-               case 3:
-                  this.tileBuffer32bit[offset++] = this.COLOR3;
-                  break;
+            let spriteY = this.spriteram8bit[idx * 4] - 16;
+            let spriteTile = this.spriteram8bit[idx * 4 + 2];
+            let spriteAttrs = this.spriteram8bit[idx * 4 + 3];
+
+            let tileDataAddress = bigSprites ? (spriteTile & 0xFE) * 16 : spriteTile * 16;
+            let tileX = spriteAttrs & 0x20 ? spriteX - x + 8 : x - spriteX;
+            let tileY = spriteAttrs & 0x40 ? spriteY - line + 16 : line - spriteY;
+
+            if (tileY >= 8) {
+               tileY -= 8;
+               tileDataAddress += 16;
             }
-         }
-      }
-   }
-   
-   this.getSprites = function(line){
-         
-      var palette0 = this.getObj0Palette();
-      var palette1 = this.getObj1Palette();
-         
-      var sprites = new Array();
-      for(var i = 0; i < 40; i++){
-         var sprite = new Object();
-         sprite.n = i;
-         sprite.y = this.spriteram8bit[i*4]-16;
-         sprite.x = this.spriteram8bit[i*4+1]-8;
-         sprite.tile = this.spriteram8bit[i*4+2];
-         sprite.flags = this.spriteram8bit[i*4+3];
-         if((this.io8bit[0x40] & 4) && (line - sprite.y) < 16 && (line - sprite.y) >= 0 && sprite.x > -8 && sprite.x < 160){
-            sprites.push(sprite);
-         }else if((this.io8bit[0x40] & 4)== 0 && (line - sprite.y) < 8 && (line - sprite.y) >= 0 && sprite.x > -8 && sprite.x < 160){
-            sprites.push(sprite);
-         }else{
-            continue;
-         }
-         
-         if(this.spriteMap[i] != sprite.tile){
-            if(sprite.flags & 16){
-               this.redrawSpriteTile((this.io8bit[0x40] & 4? sprite.tile & 254 : sprite.tile), palette1);
-            }else{
-               this.redrawSpriteTile((this.io8bit[0x40] & 4? sprite.tile & 254 : sprite.tile), palette0);
-            }
-            var imagedata = this.spriteCtx[i].getImageData(0, 0, 8, 8);
-            imagedata.data.set(new Uint8Array(this.tileBuffer));
-            this.spriteCtx[i].putImageData(imagedata, 0, 0);
-            
-            if(this.io8bit[0x40] & 4){
-               if(sprite.flags & 16){
-                  this.redrawSpriteTile(sprite.tile | 1, palette1);
-               }else{
-                  this.redrawSpriteTile(sprite.tile | 1, palette0);
+
+            let firstByte = this.vram8bit[tileDataAddress + (tileY * 2)];
+            let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
+            let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
+            let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
+            let spriteColor = bit0 | bit1;
+
+            if (spriteColor > 0) {
+               if (spriteAttrs & 0x08) {
+                  spriteColor |= 0x0C;
+               } else {
+                  spriteColor |= 0x08;
                }
-               var imagedata = this.spriteCtx[i].getImageData(0, 8, 8, 8);
-               imagedata.data.set(new Uint8Array(this.tileBuffer));
-               this.spriteCtx[i].putImageData(imagedata, 0, 8);
+
+               if (spriteAttrs & 0x80) {
+                  spriteUnderColor = spriteColor;
+               } else {
+                  color = spriteColor;
+               }
+               break;
             }
-            
-            this.spriteMap[i] = sprite.tile;
          }
-         
-      }
-      return sprites;
-   }
+
+         // Window
+         if(color == -1 && lcdControl & 0x20 && line >= this.io8bit[0x4A] && this.io8bit[0x4A] < 143 && this.io8bit[0x4B] < 166){
+
+            let winPixelX = (x - this.io8bit[0x4B] + 7);
+            let winPixelY = (line - this.io8bit[0x4A]);
+
+            if (winPixelX > 0 && winPixelY > 0) {
+               let winTileX = Math.floor(winPixelX / 8);
+               let winTileY = Math.floor(winPixelY / 8);
+               let tileId = this.vram8bit[winTileMapArea + winTileY * 32 + winTileX];
    
-   this.drawLine = function(line){
-      
-      var lcdconfig = this.io8bit[0x40];
-      
-      if(lcdconfig & 1 || lcdconfig & 32){
-         var palette = this.getPalette();
-      }
-      // Main BG
-      if(lcdconfig & 1){
-      
-         var pixelx = this.io8bit[0x43] % 8;
-         var pixely = ((line + this.io8bit[0x42] + 256) % 256) % 8;
-         var tilex = 0;
-         var tiley = Math.floor(((line + this.io8bit[0x42] + 256) % 256)/8);
-         
-         this.remapBgMap(tiley);
-         
-         var width = Math.min(256 - this.io8bit[0x43], 160);
-         this.displaycanvas.drawImage(this.bgCanvas, this.io8bit[0x43], (line + this.io8bit[0x42] + 256) % 256,
-            width, 1, 0, line, width, 1);
-         
-         if(width < 160){
-            this.displaycanvas.drawImage(this.bgCanvas, 0, (line + this.io8bit[0x42] + 256) % 256,
-               160-width, 1, width, line, 160-width, 1);
-         }
-         
-      }
-      // Window BG
-      if(lcdconfig & 32 && line >= this.io8bit[0x4A] && this.io8bit[0x4A] < 143 && this.io8bit[0x4B] < 166){
-      
-         var pixelx = (this.io8bit[0x4B]-7) % 8;
-         var pixely = (line - this.io8bit[0x4A]) % 8;
-         var tilex = 0;
-         var tiley = Math.floor((line - this.io8bit[0x4A])/8);
-      
-         this.remapWindowMap(tiley);
-          
-         var width = Math.min(160 - (this.io8bit[0x4B]-7));
-         this.displaycanvas.drawImage(this.winCanvas, 0, line - this.io8bit[0x4A],
-            width, 1, (this.io8bit[0x4B]-7), line, width, 1);
-         
-      }
-      // Sprites
-      if(lcdconfig & 2){
-         
-         var sprites = this.getSprites(line);
-         for(var i = 0; sprites[i] != undefined; i++){
-            var n = sprites[i].n;
-            
-            this.displaycanvas.save();
-            this.displaycanvas.transform(sprites[i].flags & 32 ? -1 : 1, 0, 0, 1, 0, 0);
-            if((this.io8bit[0x40] & 4) == 0){
-               this.displaycanvas.drawImage(this.spriteCanvas[n], 0, sprites[i].flags & 64 ? 7-(line-sprites[i].y) : line-sprites[i].y, 8, 1,
-                  sprites[i].flags & 32 ? -sprites[i].x-8 : sprites[i].x , line, 8, 1);
-            }else{
-               this.displaycanvas.drawImage(this.spriteCanvas[n], 0, sprites[i].flags & 64 ? 15-(line-sprites[i].y) : line-sprites[i].y, 8, 1,
-                  sprites[i].flags & 32 ? -sprites[i].x-8 : sprites[i].x , line, 8, 1);
+               let tileDataAddress;
+               if (lcdControl & 0x10) {
+                  tileDataAddress = tileId * 16; // $8000–$87FF, $8800–$8FFF
+               } else {
+                  if (tileId >= 128) tileId -= 256;
+                  tileDataAddress = 0x1000 + tileId * 16; // $9000–$97FF, $8800–$8FFF
+               }
+               let tileX = winPixelX - winTileX * 8;
+               let tileY = winPixelY - winTileY * 8;
+               
+               let firstByte = this.vram8bit[tileDataAddress + (tileY * 2)];
+               let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
+               let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
+               let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
+               if (Math.random() < 0.02) debugger;
+               color = bit0 | bit1;
             }
-            this.displaycanvas.restore();
-            
          }
+
+         // BG
+         if(color == -1 && lcdControl & 0x01){
+            let bgPixelX = (x + this.io8bit[0x43] + 256) % 256;
+            let bgPixelY = (line + this.io8bit[0x42] + 256) % 256;
+            let bgTileX = Math.floor(bgPixelX / 8);
+            let bgTileY = Math.floor(bgPixelY / 8);
+            let tileId = this.vram8bit[bgTileMapArea + bgTileY * 32 + bgTileX];
+
+            let tileDataAddress;
+            if (lcdControl & 0x10) {
+               tileDataAddress = tileId * 16; // $8000–$87FF, $8800–$8FFF
+            } else {
+               if (tileId >= 128) tileId -= 256;
+               tileDataAddress = 0x1000 + tileId * 16; // $9000–$97FF, $8800–$8FFF
+            }
+            let tileX = bgPixelX - bgTileX * 8;
+            let tileY = bgPixelY - bgTileY * 8;
+            
+            let firstByte = this.vram8bit[tileDataAddress + (tileY * 2)];
+            let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
+            let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
+            let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
+            color = bit0 | bit1;
+         }
+
+         if (color == 0 && spriteUnderColor != -1) {
+            color = spriteUnderColor;
+         }
+
+         this.lcd[line * this.LCD_WIDTH + x] = color;
       }
+   }
+
+   this.drawScreenCanvas2D = function () {
+
+      let paletteBg = this.io8bit[0x47];
+      let paletteObj0 = this.io8bit[0x48];
+      let paletteObj1 = this.io8bit[0x49];
+
+      let ctx = /** @type {CanvasRenderingContext2D} */ (this.canvas.getContext("2d"));
+      let imageData = ctx.getImageData(0, 0, this.LCD_WIDTH, this.LCD_HEIGHT);
+      for (let i = 0; i < this.lcd.length; i++) {
+         let color = this.lcd[i];
+         let value = 0;
+         if (color == -1) {
+            value = 0;
+         } else if (color & 0x08) {
+            if (color & 0x04) {
+               color &= 0x03;
+               value = (paletteObj1 >> (color * 2)) & 0x03;
+            } else {
+               color &= 0x03;
+               value = (paletteObj0 >> (color * 2)) & 0x03;
+            }
+         } else {
+            value = (paletteBg >> (color * 2)) & 0x03;
+         }
+         /*imageData.data[i * 4] = this.COLORS[value][0];
+         imageData.data[i * 4 + 1] = this.COLORS[value][1];
+         imageData.data[i * 4 + 2] = this.COLORS[value][2];*/
+         imageData.data[i * 4] = this.COLORS[color & 0x03][0];
+         imageData.data[i * 4 + 1] = this.COLORS[color & 0x03][1];
+         imageData.data[i * 4 + 2] = this.COLORS[color & 0x03][2];
+         imageData.data[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
    }
    
    this.z80 = Z80(window, {

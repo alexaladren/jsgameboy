@@ -78,11 +78,8 @@ function loadROM(arraybuffer){
       document.getElementById("display").getContext("2d").setTransform(1,0,0,1,0,0);
    }
    
-   gb = new GameBoy(arraybuffer);
-   gb.displaycanvas = document.getElementById("display").getContext("2d");
-   
-   document.getElementById("display").getContext("2d").scale(2,2);
-   
+   gb = new GameBoy(arraybuffer, document.getElementById("display"));
+      
    var data = document.getElementById("data");
    title = "";
    for(var i = 0; gb.getAddress(308+i) != 0; i++){
