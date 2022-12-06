@@ -52,11 +52,17 @@ var GameBoy = function(rom){
    this.romRamMode = 0; // 0 = ROM mode, 1 = RAM mode
    
    this.cartram8bit = new Array(this.ramSpace);
+   this.cartram8bit.fill(0);
    this.vram8bit = new Array(8192);
+   this.vram8bit.fill(0);
    this.wram8bit = new Array(8192);
+   this.wram8bit.fill(0);
    this.spriteram8bit = new Array(160);
+   this.spriteram8bit.fill(0);
    this.io8bit = new Array(127);
+   this.io8bit.fill(0);
    this.hram8bit = new Array(126);
+   this.hram8bit.fill(0);
    
    this.bgMap = new Array();
    this.bgModified = new Array();
@@ -110,17 +116,13 @@ var GameBoy = function(rom){
    
    this.intEnable = 0;
    
-   this.vstatus = 0;
-   this.hstatus = 0;
+   this.lcdLine = 0;
+   this.lcdMode = 0;
+   this.lcdstat = 0;
    
    this.divider = 0;
    this.timer = 0;
-   this.timerControl = 0;
    
-   this.clockDivider = 0;
-   this.clockTimer = 0;
-   
-   this.lcdstat = 0;
    this.paused = false;
    this.fps = 0;
    
@@ -160,89 +162,65 @@ var GameBoy = function(rom){
       // 4213440 ticks per second
       if(this.paused) return;
       this.transferClock();
-      for(var i = 0; i < (154*4); i++){
-         this.z80.execute(114);
-         this.timerControlAdd(114);
-         this.LCDStatusAdd();
+      for(var i = 0; i < 144; i++){
+         this.LCDStatusSet(i, 2);
+         this.z80.execute(80);
+
+         this.LCDStatusSet(i, 3);
+         this.z80.execute(172);
+
+         this.LCDStatusSet(i, 0);
+         this.z80.execute(204);
+      }
+      for(var i = 144; i < 154; i++){
+         this.LCDStatusSet(i, 1);
+         this.z80.execute(456);
       }
    }
 
-   this.LCDStatusAdd = function(){
-      if(this.vstatus == this.io8bit[0x45]){ // LYC == LY ?
+   this.LCDStatusSet = function(line, mode){
+      this.lcdLine = line;
+      this.lcdMode = mode;
+
+      if(this.lcdLine == this.io8bit[0x45]){ // LYC == LY ?
          this.lcdstat |= 4;
-         if(this.hstatus == 0 && this.lcdstat & 64){this.LCDInt()};
+         if(this.lcdMode == 0 && this.lcdstat & 64){
+            this.LCDInt();
+         };
       }else{
          this.lcdstat &= ~4;
       }
       
       this.lcdstat &= ~3;
-      if(this.vstatus < 144){
-         if(this.hstatus == 0){
-            this.lcdstat |= 2;
-         }else if(this.hstatus == 1){
-            if(this.io8bit[0x40] & 128) this.drawLine(this.vstatus);
-            this.lcdstat |= 3;
-         }else if(this.hstatus == 4){
-            this.vstatus++;
-            this.hstatus = -1;
-         }
-      }else{
-         
-         if(this.vstatus == 144 && this.hstatus == 0){
-            this.fps++;
-            if(this.fps == 60){
-               if(this.onFPS != null) this.onFPS("FPS: "+Math.round(1000/((new Date()) - this.fpstime)));
-               this.fps = 0;
-            }
-            this.fpstime = new Date();
-            this.vblankInt();
-            if(this.lcdstat & 16){this.LCDInt()};
-         }
-         
-         this.lcdstat |= 1;
-         if(this.hstatus == 4){this.hstatus = -1; this.vstatus++;}
-         if(this.vstatus == 154) this.vstatus = 0;
+      this.lcdstat |= mode;
+
+      if (this.lcdMode == 0) {
+         if(this.io8bit[0x40] & 128) this.drawLine(this.lcdLine);
       }
-      this.hstatus++;
-   }
-   
-   this.timerControlAdd = function(n){
-      this.clockDivider += n;
-      if(this.clockDivider >= 257){
-         this.divider = (this.divider + 1) % 256;
-         this.clockDivider %= 257;
-      }
-      if(this.timerControl & 4){
-         this.clockTimer += n;
-         if(this.timerControl & 3 == 0){
-            while(this.clockTimer >= 1024){
-               this.timerAddOne();
-               this.clockTimer -= 1024;
-            }
-         }else if(this.timerControl & 3 == 1){
-            while(this.clockTimer >= 16){
-               this.timerAddOne();
-               this.clockTimer -= 16;
-            }
-         }else if(this.timerControl & 3 == 2){
-            while(this.clockTimer >= 64){
-               this.timerAddOne();
-               this.clockTimer -= 64;
-            }
-         }else if(this.timerControl & 3 == 3){
-            while(this.clockTimer >= 256){
-               this.timerAddOne();
-               this.clockTimer -= 256;
-            }
+
+      if (this.lcdLine == 144) {
+         this.fps++;
+         if(this.fps == 60){
+            if(this.onFPS != null) this.onFPS("FPS: "+Math.round(1000/((new Date()) - this.fpstime)));
+            this.fps = 0;
          }
+         this.fpstime = new Date();
+         this.vblankInt();
+         if(this.lcdstat & 16){
+            this.LCDInt()
+         };
       }
    }
+
+   this.timerDividerIncrement = function () {
+      this.divider = (this.divider + 1) % 256;
+   }
    
-   this.timerAddOne = function(){
+   this.timerCounterIncrement = function () {
       this.timer++;
       if(this.timer >= 256){
          this.timerInt();
-         this.timer = this.io8bit[0x06];
+         this.timer = this.io8bit[0x06] ?? 0;
       }
    }
    
@@ -275,35 +253,65 @@ var GameBoy = function(rom){
    }
    
    this.vblankInt = function(){
-      this.io8bit[15] |= 1;
-      this.executeInt();
+      this.io8bit[0x0F] |= 1;
+      this.checkForInterrupts();
    }
    this.LCDInt = function(){
-      this.io8bit[15] |= 2;
-      this.executeInt();
+      this.io8bit[0x0F] |= 2;
+      this.checkForInterrupts();
    }
    this.timerInt = function(){
-      this.io8bit[15] |= 4;
-      this.executeInt();
+      this.io8bit[0x0F] |= 4;
+      this.checkForInterrupts();
    }
    this.serialInt = function(){
-      this.io8bit[15] |= 8;
-      this.executeInt();
+      this.io8bit[0x0F] |= 8;
+      this.checkForInterrupts();
    }
    this.joypadInt = function(){
-      this.io8bit[15] |= 16;
-      this.executeInt();
+      this.io8bit[0x0F] |= 16;
+      this.checkForInterrupts();
    }
    
-   this.executeInt = function(){
-      var intvector = this.io8bit[15];
-      if(intvector & 1 && this.intEnable & 1 && this.z80.interrupt(64)) intvector &= ~1;
-      if(intvector & 2 && this.intEnable & 2 && this.z80.interrupt(72)) intvector &= ~2;
-      if(intvector & 4 && this.intEnable & 4 && this.z80.interrupt(80)) intvector &= ~4;
-      if(intvector & 8 && this.intEnable & 8 && this.z80.interrupt(88)) intvector &= ~8;
-      if(intvector & 16 && this.intEnable & 16 && this.z80.interrupt(96)) intvector &= ~16;
-      this.io8bit[15] = intvector;
+   this.checkForInterrupts = function(){
+      var intvector = this.io8bit[0x0F];
+      if(intvector & 1 && this.intEnable & 1) {
+         this.z80.resume();
+         if (this.z80.getIME()) {
+            intvector &= ~1;
+            this.z80.interrupt(0x40);
+         }
+      } else if (intvector & 2 && this.intEnable & 2) {
+         this.z80.resume();
+         if (this.z80.getIME()) {
+            intvector &= ~2;
+            this.z80.interrupt(0x48)
+         }
+      } else if (intvector & 4 && this.intEnable & 4) {
+         this.z80.resume();
+         if (this.z80.getIME()) {
+            intvector &= ~4;
+            this.z80.interrupt(0x50)
+         }
+      } else if (intvector & 8 && this.intEnable & 8) {
+         this.z80.resume();
+         if (this.z80.getIME()) {
+            intvector &= ~8;
+            this.z80.interrupt(0x58)
+         }
+      } else if (intvector & 16 && this.intEnable & 16) {
+         this.z80.resume();
+         if (this.z80.getIME()) {
+            intvector &= ~16;
+            this.z80.interrupt(0x60)
+         }
+      }
+      this.io8bit[0x0F] = intvector;
    }
+
+   /*this.interruptHandled = function (address) {
+
+   }*/
    
    this.getAddress = function(address){
       //console.log("Lee memoria", address);
@@ -386,6 +394,7 @@ var GameBoy = function(rom){
    }
    
    this.getIO = function(address){
+      //console.log("get", address, this.io8bit[address]);
       if(address == 0){
          if((this.io8bit[0] & 48) == 48){
             return this.io8bit[0] & ~15;
@@ -403,19 +412,17 @@ var GameBoy = function(rom){
          return this.divider;
       }else if(address == 0x05){
          return this.timer;
-      }else if(address == 0x07){
-         return this.timerControl;
       }else if(address == 0x41){
          return this.lcdstat;
       }else if(address == 0x44){
-         return this.vstatus;
+         return this.lcdLine;
       }else{
-         //console.log("-- Lectura E/S", Math.floor((address)/16), (address)%16, this.z80.PC);
          return this.io8bit[address];
       }
    }
    
    this.putIO = function(address, data){
+      //console.log("put", address, data);
       if(address == 0x01){
          this.transferByte = data;
       }else if(address == 0x02){
@@ -433,10 +440,23 @@ var GameBoy = function(rom){
       }else if(address == 0x05){
          this.timer = 0;
       }else if(address == 0x07){
-         this.timerControl = data;
+         this.io8bit[0x07] = data;
+         if (data & 0x04) {
+            if ((data & 0x03) == 0) {
+               this.z80.setTimerCounterFrequency(1024);
+            } else if ((data & 0x03) == 1) {
+               this.z80.setTimerCounterFrequency(16);
+            } else if ((data & 0x03) == 2) {
+               this.z80.setTimerCounterFrequency(64);
+            } else if ((data & 0x03) == 3) {
+               this.z80.setTimerCounterFrequency(256);
+            }
+         } else {
+            this.z80.setTimerCounterFrequency(0);
+         }
       }else if(address == 0x0F){
          this.io8bit[address] = data;
-         this.executeInt();
+         this.checkForInterrupts();
       }else if(address == 0x40){
          this.io8bit[address] = data;
       }else if(address == 0x41){
@@ -460,6 +480,9 @@ var GameBoy = function(rom){
             }
          }
          this.io8bit[0x47] = data;
+      } else if (address == 0x0F) {
+         this.io8bit[0x0F] = data;
+         this.checkForInterrupts();
       }else{
          this.io8bit[address] = data;
       }
@@ -706,8 +729,14 @@ var GameBoy = function(rom){
       putAddress: function(){
          _this.putAddress.apply(_this, arguments);
       },
-      executeInt: function(){
-         _this.executeInt.apply(_this, arguments);
+      checkForInterrupts: function(){
+         _this.checkForInterrupts.apply(_this, arguments);
+      },
+      timerDividerIncrement: function () {
+         return _this.timerDividerIncrement.apply(_this, arguments);
+      },
+      timerCounterIncrement: function () {
+         return _this.timerCounterIncrement.apply(_this, arguments);
       },
       start: 256
    });

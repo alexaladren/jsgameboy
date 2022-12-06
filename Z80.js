@@ -23,7 +23,10 @@ var Z80 = function(stdlib, foreign){
 
    var getAddress = foreign.getAddress;
    var putAddress = foreign.putAddress;
-   var executeInt = foreign.executeInt;
+   var checkForInterrupts = foreign.checkForInterrupts;
+   //var interruptHandled = foreign.interruptHandled;
+   var timerDividerIncrement = foreign.timerDividerIncrement;
+   var timerCounterIncrement = foreign.timerCounterIncrement;
    
    var PC = foreign.start|0;
    var RA = 1;
@@ -40,10 +43,17 @@ var Z80 = function(stdlib, foreign){
    var FC = 0;
    
    var IME = 0;
+   var interruptCall = 0;
+
+   var timerDivider = 0;
+   var timerCounter = 0;
+   var timerCounterFrequency = 0;
+
    var stopped = 0;
    
    function stop(){
       stopped = 1;
+      timerDivider = 0;
    }
    
    function resume(){
@@ -52,14 +62,14 @@ var Z80 = function(stdlib, foreign){
    
    function interrupt(address){
       address = address|0;
-      if(IME){
-         //foreign.log("Interrupcion", address);
-         IME = 0;
-         call(address);
-         resume();
-         return 1;
+      resume();
+      if (IME) {
+         interruptCall = address;
       }
-      return 0;
+   }
+
+   function getIME() {
+      return IME|0;
    }
    
    function getAddress16(address){
@@ -104,7 +114,7 @@ var Z80 = function(stdlib, foreign){
       if((((a|0) % 16)|0) == 15){
          FH = 1;
       }
-      return (a+1)|0;
+      return (a+1)|0 % 256;
    }
    
    function decrement8(a){
@@ -151,28 +161,63 @@ var Z80 = function(stdlib, foreign){
    function adc8(a, b){
       a = a|0;
       b = b|0;
-      if(FC){
-         return add8(a, (b+1)|0)|0;
+      var c = 0;
+      c = FC;
+      FN = 0;
+      if(((a + b + c)|0) >= 256){
+         FC = 1;
+      }else{
+         FC = 0;
       }
-      return add8(a, b)|0;
+      if(((((a + b + c)|0) % 256)|0) == 0){
+         FZ = 1;
+      }else{
+         FZ = 0;
+      }
+      if(((((a|0) % 16|0) + ((b|0) % 16|0) + c)|0) >= 16){
+         FH = 1;
+      }else{
+         FH = 0;
+      }
+      return (((a + b + c)|0) % 256)|0;
    }
    
    function add16(a, b){
       a = a|0;
       b = b|0;
-      if((b|0) < 0) b = (b + 65536)|0;
+      a = a & 0xFFFF;
+      b = b & 0xFFFF;
       FN = 0;
-      if(((a + b)|0) >= 65536){
+      if(((a + b)|0) > 0xFFFF){
          FC = 1;
       }else{
          FC = 0;
       }
-      if(((((a|0) % 4096|0) + ((b|0) % 4096|0))|0) >= 4096){
+      if ((((a & 0x0FFF) + (b & 0x0FFF))|0) > 0x0FFF) {
          FH = 1;
       }else{
          FH = 0;
       }
-      return ((a + b|0) % 65536)|0;
+      return (a + b) & 0xFFFF;
+   }
+
+   function add16_8(a, b){
+      a = a|0;
+      b = b|0;
+      a = a & 0xFFFF;
+      b = b & 0xFFFF;
+      FN = 0;
+      if ((((a & 0xFF) + (b & 0xFF))|0) > 0xFF) {
+         FC = 1;
+      }else{
+         FC = 0;
+      }
+      if ((((a & 0x0F) + (b & 0x0F))|0) > 0x0F) {
+         FH = 1;
+      }else{
+         FH = 0;
+      }
+      return (a + b) & 0xFFFF;
    }
    
    function sub8(a, b){
@@ -200,10 +245,25 @@ var Z80 = function(stdlib, foreign){
    function sbc8(a, b){
       a = a|0;
       b = b|0;
-      if(FC){
-         return sub8(a, b+1|0)|0;
+      var c = 0;
+      c = FC;
+      FN = 1;
+      if((a - b - c|0) < 0){
+         FC = 1;
+      }else{
+         FC = 0;
       }
-      return sub8(a, b)|0;
+      if(((a - b - c) & 0xFF) == 0){
+         FZ = 1;
+      }else{
+         FZ = 0;
+      }
+      if ((((a & 0x0F) - (b & 0x0F) - c)|0) < 0) {
+         FH = 1;
+      }else{
+         FH = 0;
+      }
+      return (a - b - c) & 0xFF;
    }
    
    function and8(a, b){
@@ -249,7 +309,6 @@ var Z80 = function(stdlib, foreign){
    }
    
    function call(address){
-      //foreign.log("Llamada a", address,"desde",PC);
       address = address|0;
       RSP = RSP-2|0;
       putAddress16(RSP, PC);
@@ -259,7 +318,6 @@ var Z80 = function(stdlib, foreign){
    
    function ret(){
       PC = getAddress16(RSP)|0;
-      //console.log("Retorno", PC);
       RSP = RSP+2|0;
       RSP = (RSP|0) % 0x10000|0;
    }
@@ -271,7 +329,7 @@ var Z80 = function(stdlib, foreign){
    
    function setL(val){
       val = val|0;
-      RHL = (RHL & 0xFF00) | (val);
+      RHL = (RHL & 0xFF00) | (val & 0x00FF);
    }
    
    // http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html
@@ -290,7 +348,7 @@ var Z80 = function(stdlib, foreign){
    // 06 - LD B,d8
    function inst06(){PC=(PC+1)|0; RB = immediate8()|0; PC=(PC+1)|0; return 8};
    // 07 - RLCA
-   function inst07(){PC=(PC+1)|0; cbinstruction(7); return 4};
+   function inst07(){PC=(PC+1)|0; cbinstruction(7); FZ=0; return 4};
    // 08 - LD (a16),SP
    function inst08(){PC=(PC+1)|0; putAddress16(immediate16()|0,RSP); PC=(PC+2)|0; return 20};
    // 09 - ADD HL,BC
@@ -306,7 +364,7 @@ var Z80 = function(stdlib, foreign){
    // 0E - LD C,d8
    function inst0E(){PC=(PC+1)|0; RC = immediate8()|0; PC=(PC+1)|0; return 8};
    // 0F - RRCA
-   function inst0F(){PC=(PC+1)|0; cbinstruction(15); return 4};
+   function inst0F(){PC=(PC+1)|0; cbinstruction(15); FZ=0;  return 4};
    // 10 - STOP
    function inst10(){stop(); PC=(PC+1)|0; return 4};
    // 11 - LD DE,d16
@@ -322,7 +380,7 @@ var Z80 = function(stdlib, foreign){
    // 16 - LD D,d8
    function inst16(){PC=(PC+1)|0; RD = immediate8()|0; PC=(PC+1)|0; return 8};
    // 17 - RLA
-   function inst17(){PC=(PC+1)|0; cbinstruction(23); return 4};
+   function inst17(){PC=(PC+1)|0; cbinstruction(23); FZ=0; return 4};
    // 18 - JR r8
    function inst18(){PC=(PC+1)|0; PC = PC + (signImmediate8()|0)+1 |0; return 12};
    // 19 - ADD HL,DE
@@ -338,7 +396,7 @@ var Z80 = function(stdlib, foreign){
    // 1E - LD E,d8
    function inst1E(){PC=(PC+1)|0; RE = immediate8()|0; PC=(PC+1)|0; return 8};
    // 1F - RRA
-   function inst1F(){PC=(PC+1)|0; cbinstruction(31); return 4};
+   function inst1F(){PC=(PC+1)|0; cbinstruction(31); FZ=0; return 4};
    // 20 - JR NZ,r8
    function inst20(){if(!FZ){
       PC=(PC+1)|0; PC= PC+(signImmediate8()|0) +1|0; return 12
@@ -356,24 +414,17 @@ var Z80 = function(stdlib, foreign){
    // 26 - LD H,d8
    function inst26(){PC=(PC+1)|0; setH(immediate8()|0); PC=(PC+1)|0; return 8};
    // 27 - DAA
-   function inst27(){var upper = 0; var lower = 0; PC=(PC+1)|0; upper = RA >> 4; lower = (RA|0) % 16 |0;
-      if(!FN){
-         if(!FC & !FH & (upper|0) <= 9 & (lower|0) <= 9){FC = 0;}
-         else if(!FC & !FH & (upper|0) <= 8 & (lower|0) >= 10){FC = 0; RA = RA + 0x06 |0}
-         else if(!FC & FH & (upper|0) <= 9 & (lower|0) <= 3){FC = 0; RA = RA + 0x06 |0}
-         else if(!FC & !FH & (upper|0) >= 10 & (lower|0) <= 9){FC = 1; RA = RA + 0x60 |0}
-         else if(!FC & !FH & (upper|0) >= 9 & (lower|0) >= 10){FC = 1; RA = RA + 0x66 |0}
-         else if(!FC & FH & (upper|0) >= 10 & (lower|0) <= 3){FC = 1; RA = RA + 0x66 |0}
-         else if(FC & !FH & (upper|0) <= 2 & (lower|0) <= 9){FC = 1; RA = RA + 0x60 |0}
-         else if(FC & !FH & (upper|0) <= 2 & (lower|0) >= 10){FC = 1; RA = RA + 0x66 |0}
-         else if(FC & FH & (upper|0) <= 3 & (lower|0) <= 3){FC = 1; RA = RA + 0x66 |0}
-      }else{
-         if(!FC & !FH & (upper|0) <= 9 & (lower|0) <= 9){FC = 0;}
-         else if(!FC & FH & (upper|0) <= 8 & (lower|0) >= 6){FC = 0; RA = RA + 0xFA |0}
-         else if(FC & !FH & (upper|0) >= 7 & (lower|0) <= 9){FC = 1; RA = RA + 0xA0 |0}
-         else if(FC & FH & (upper|0) >= 6 & (lower|0) >= 6){FC = 1; RA = RA + 0x9A |0}
+   function inst27(){
+      PC=(PC+1)|0;
+      if ((FN|0) == 1) {
+         if ((FC|0) == 1) {RA = (RA - 0x60) & 0xFF}
+         if ((FH|0) == 1) {RA = (RA - 0x06) & 0xFF}
+      } else {
+         if (((FC|0) == 1) | ((RA & 0xFF) > 0x99)) {RA = (RA + 0x60) & 0xFF; FC = 1;}
+         if (((FH|0) == 1) | ((RA & 0x0F) > 0x09)) {RA = (RA + 0x06) & 0xFF;}
       }
-      RA = (RA|0) % 256 |0;
+      if((RA|0) == 0) FZ = 1; else FZ = 0;
+      FH = 0;
       return 4
    };
    // 28 - JR Z,r8
@@ -539,7 +590,7 @@ var Z80 = function(stdlib, foreign){
    // 75 - LD (HL),L
    function inst75(){putAddress(RHL|0, RHL & 0xFF); PC=(PC+1)|0; return 8};
    // 76 - HALT
-   function inst76(){if((IME|0) == 1) stop(); PC=(PC+1)|0;  return 4};
+   function inst76(){stop(); PC=(PC+1)|0; checkForInterrupts(); return 4};
    // 77 - LD (HL),A
    function inst77(){putAddress(RHL|0, RA|0); PC=(PC+1)|0; return 8};
    // 78 - LD A,B
@@ -749,7 +800,7 @@ var Z80 = function(stdlib, foreign){
    // D8 - RET C
    function instD8(){if(FC){ret(); return 20} else PC=(PC+1)|0; return 8};
    // D9 - RETI
-   function instD9(){IME = 1; ret(); return 16};
+   function instD9(){IME = 1; ret(); checkForInterrupts(); return 16};
    // DA - JP C,a16
    function instDA(){if(FC){
       PC=(PC+1)|0; PC = immediate16()|0; return 16
@@ -783,7 +834,7 @@ var Z80 = function(stdlib, foreign){
    // E7 - RST 20H
    function instE7(){PC=(PC+1)|0; call(32); return 16};
    // E8 - ADD SP,r8
-   function instE8(){PC=(PC+1)|0; RSP = add16(RSP|0, signImmediate8()|0)|0; FZ = 0; PC=(PC+1)|0; return 16};
+   function instE8(){PC=(PC+1)|0; RSP = add16_8(RSP|0, signImmediate8()|0)|0; FZ = 0; PC=(PC+1)|0; return 16};
    // E9 - JP (HL)
    function instE9(){PC = RHL; return 4};
    // EA - LD (a16),A
@@ -816,13 +867,13 @@ var Z80 = function(stdlib, foreign){
    // F7 - RST 30H
    function instF7(){PC=(PC+1)|0; call(48); return 16};
    // F8 - LD HL,SP+r8
-   function instF8(){PC=(PC+1)|0; RHL = add16(RSP|0, signImmediate8()|0)|0; FZ = 0; PC=(PC+1)|0; return 12};
+   function instF8(){PC=(PC+1)|0; RHL = add16_8(RSP|0, signImmediate8()|0)|0; FZ = 0; PC=(PC+1)|0; return 12};
    // F9 - LD SP,HL
    function instF9(){RSP = RHL; PC=(PC+1)|0; return 8};
    // FA - LD A,(a16)
    function instFA(){PC=(PC+1)|0; RA = getAddress(immediate16()|0)|0; PC=(PC+2)|0; return 16};
    // FB - EI
-   function instFB(){IME = 1; PC=(PC+1)|0; executeInt(); return 4};
+   function instFB(){IME = 1; PC=(PC+1)|0; checkForInterrupts(); return 4};
    // FC - 
    function instFC(){return 0;};
    // FD - 
@@ -910,10 +961,52 @@ var Z80 = function(stdlib, foreign){
    function execute(n){
       n = n|0;
       var inst = 0;
-      while((!stopped) & ((n|0) > 0)){
-         inst = getAddress(PC|0)|0;
-         n = n - (instructions[inst & 0xFF]()|0)|0;
+      var length = 0;
+      while(((n|0) > 0)){
+         //let auxPC = PC;
+
+         if ((IME|0) == 1) {
+            if ((interruptCall|0) > 0) {
+               IME = 0;
+               call(interruptCall);
+               interruptCall = 0;
+            }
+         }
+
+         if (stopped) {
+            length = 1;
+            n = (n - 1)|0;
+         } else {
+            inst = getAddress(PC|0)|0;
+            length = instructions[inst & 0xFF]()|0;
+            n = (n - length)|0;
+         }
+
+         timerDivider = (timerDivider + length)|0;
+         if ((timerDivider|0) >= 256) {
+            timerDivider = (timerDivider|0 % 256)|0;
+            timerDividerIncrement();
+         }
+
+         if ((timerCounterFrequency|0) > 0) {
+            timerCounter = (timerCounter + length)|0;
+            if ((timerCounter|0) >= (timerCounterFrequency|0)) {
+               timerCounter = ((timerCounter|0) % (timerCounterFrequency|0))|0;
+               timerCounterIncrement();
+            }
+         }
+         
+         /*if (RA > 0xFF || RB > 0xFF || RC > 0xFF || RD > 0xFF || RE > 0xFF
+            || RA < 0 || RB < 0 || RC < 0 || RD < 0 || RE < 0) {
+            console.log(myPc, getAddress(auxPC));
+            debugger;
+         }*/
       }
+   }
+
+   function setTimerCounterFrequency (frequency) {
+      frequency = frequency|0;
+      timerCounterFrequency = frequency;
    }
    
    var instructions = [
@@ -939,569 +1032,9 @@ instF0,instF1,instF2,instF3,instF4,instF5,instF6,instF7,instF8,instF9,instFA,ins
       execute: execute,
       stop: stop,
       resume: resume,
-      interrupt: interrupt
+      interrupt: interrupt,
+      getIME: getIME,
+      setTimerCounterFrequency: setTimerCounterFrequency
    }
    
 }
-
-/*var instructions = new Array(
-   // http://www.pastraiser.com/cpu/gameboy/gameboy_opcodes.html
-   // 00 - NOP
-   function(){PC++; return 4},
-   // 01 - LD BC,d16
-   function(){PC++; var data = immediate16(); RB = data >> 8; RC = data & 0xFF; PC+= 2; return 12},
-   // 02 - LD (BC),A
-   function(){putAddress((RB << 8) | RC, RA); PC++; return 8},
-   // 03 - INC BC
-   function(){RC++; if(RC == 256){RC = 0; RB++; if(RB == 256) RB = 0;}; PC++; return 8},
-   // 04 - INC B
-   function(){RB = increment8(RB); PC++; return 4},
-   // 05 - DEC B
-   function(){RB = decrement8(RB); PC++; return 4},
-   // 06 - LD B,d8
-   function(){PC++; RB = immediate8(); PC++; return 8},
-   // 07 - RLCA
-   function(){PC++; cbinstruction(7); return 4},
-   // 08 - LD (a16),SP
-   function(){PC++; putAddress16(immediate16(),RSP); PC+=2; return 20},
-   // 09 - ADD HL,BC
-   function(){RHL = add16(RHL,(RB << 8) | RC); PC++; return 8},
-   // 0A - LD A,(BC)
-   function(){RA = getAddress((RB << 8) | RC); PC++; return 8},
-   // 0B - DEC BC
-   function(){RC--; if(RC == -1){RC = 255; RB--; if(RB == -1) RB = 255;}; PC++; return 8},
-   // 0C - INC C
-   function(){RC = increment8(RC); PC++; return 4},
-   // 0D - DEC C
-   function(){RC = decrement8(RC); PC++; return 4},
-   // 0E - LD C,d8
-   function(){PC++; RC = immediate8(); PC++; return 8},
-   // 0F - RRCA
-   function(){PC++; cbinstruction(15); return 4},
-   // 10 - STOP
-   function(){stop = true; PC++; return 4},
-   // 11 - LD DE,d16
-   function(){PC++; var data = immediate16(); RD = data >> 8; RE = data & 0xFF; PC+= 2; return 12},
-   // 12 - LD (DE),A
-   function(){putAddress((RD << 8) | RE, RA); PC++; return 8},
-   // 13 - INC DE
-   function(){RE++; if(RE == 256){RE = 0; RD++; if(RD == 256) RD = 0;}; PC++; return 8},
-   // 14 - INC D
-   function(){RD = increment8(RD); PC++; return 4},
-   // 15 - DEC D
-   function(){RD = decrement8(RD); PC++; return 4},
-   // 16 - LD D,d8
-   function(){PC++; RD = immediate8(); PC++; return 8},
-   // 17 - RLA
-   function(){PC++; cbinstruction(23); return 4},
-   // 18 - JR r8
-   function(){PC++; PC += signImmediate8() +1; return 12},
-   // 19 - ADD HL,DE
-   function(){RHL = add16(RHL,(RD << 8) | RE); PC++; return 8},
-   // 1A - LD A,(DE)
-   function(){RA = getAddress((RD << 8) | RE); PC++; return 8},
-   // 1B - DEC DE
-   function(){RE--; if(RE == -1){RE = 255; RD--; if(RD == -1) RD = 255;}; PC++; return 8},
-   // 1C - INC E
-   function(){RE = increment8(RE); PC++; return 4},
-   // 1D - DEC E
-   function(){RE = decrement8(RE); PC++; return 4},
-   // 1E - LD E,d8
-   function(){PC++; RE = immediate8(); PC++; return 8},
-   // 1F - RRA
-   function(){PC++; cbinstruction(31); return 4},
-   // 20 - JR NZ,r8
-   function(){if(!FZ){
-      PC++; PC+= signImmediate8() +1; return 12
-      }else{PC+=2; return 8};},
-   // 21 - LD HL,d16
-   function(){PC++; RHL = immediate16(); PC+= 2; return 12},
-   // 22 - LD (HL+),A
-   function(){putAddress(RHL, RA); RHL++; if(RHL > 0xFFFF) RHL = 0; PC++; return 8},
-   // 23 - INC HL
-   function(){RHL++; if(RHL > 0xFFFF) RHL = 0; PC++; return 8},
-   // 24 - INC H
-   function(){setH(increment8(RHL >> 8)); PC++; return 4},
-   // 25 - DEC H
-   function(){setH(decrement8(RHL >> 8)); PC++; return 4},
-   // 26 - LD H,d8
-   function(){PC++; setH(immediate8()); PC++; return 8},
-   // 27 - DAA
-   function(){PC++;  var upper = RA >> 4; var lower = RA % 16;
-      //console.log("DAA", RA, flags, toHex(PC));
-      if(!FN){
-         if(!FC && !FH && upper <= 9 && lower <= 9){FC = 0;}
-         else if(!FC && !FH && upper <= 8 && lower >= 10){FC = 0; RA += 0x06}
-         else if(!FC && FH && upper <= 9 && lower <= 3){FC = 0; RA += 0x06}
-         else if(!FC && !FH && upper >= 10 && lower <= 9){FC = 1; RA += 0x60}
-         else if(!FC && !FH && upper >= 9 && lower >= 10){FC = 1; RA += 0x66}
-         else if(!FC && FH && upper >= 10 && lower <= 3){FC = 1; RA += 0x66}
-         else if(FC && !FH && upper <= 2 && lower <= 9){FC = 1; RA += 0x60}
-         else if(FC && !FH && upper <= 2 && lower >= 10){FC = 1; RA += 0x66}
-         else if(FC && FH && upper <= 3 && lower <= 3){FC = 1; RA += 0x66}
-      }else{
-         if(!FC && !FH && upper <= 9 && lower <= 9){FC = 0;}
-         else if(!FC && FH && upper <= 8 && lower >= 6){FC = 0; RA += 0xFA}
-         else if(FC && !FH && upper >= 7 && lower <= 9){FC = 1; RA += 0xA0}
-         else if(FC && FH && upper >= 6 && lower >= 6){FC = 1; RA += 0x9A}
-      }
-      RA %= 256;
-      //if(RA == 0) FZ = 1; else FZ = 0;
-      return 4
-   },
-   // 28 - JR Z,r8
-   function(){if(FZ){
-      PC++; PC+= signImmediate8() +1; return 12
-      }else{PC+=2; return 8};},
-   // 29 - ADD HL,HL
-   function(){RHL = add16(RHL,RHL); PC++; return 8},
-   // 2A - LD A,(HL+)
-   function(){RA = getAddress(RHL); RHL++; if(RHL > 0xFFFF) RHL = 0; PC++; return 8},
-   // 2B - DEC HL
-   function(){RHL--; if(RHL < 0) RHL = 0xFFFF; PC++; return 8},
-   // 2C - INC L
-   function(){setL(increment8(RHL & 0xFF)); PC++; return 4},
-   // 2D - DEC L
-   function(){setL(decrement8(RHL & 0xFF)); PC++; return 4},
-   // 2E - LD L,d8
-   function(){PC++; setL(immediate8()); PC++; return 8},
-   // 2F - CPL
-   function(){RA = RA^255; FN = 1; FH = 1; PC++; return 4},
-   // 30 - JR NC,r8
-   function(){if(!FC){
-      PC++; PC+= signImmediate8() +1; return 12
-      }else{PC+=2; return 8};},
-   // 31 - LD SP,d16
-   function(){PC++; RSP = immediate16(); PC+= 2; return 12},
-   // 32 - LD (HL-),A
-   function(){putAddress(RHL, RA); RHL--; if(RHL < 0) RHL = 0xFFFF; PC++; return 8},
-   // 33 - INC SP
-   function(){RSP++; if(RSP > 0xFFFF) RSP = 0; PC++; return 8},
-   // 34 - INC (HL)
-   function(){putAddress(RHL, increment8(getAddress(RHL))); PC++; return 12},
-   // 35 - DEC (HL)
-   function(){putAddress(RHL, decrement8(getAddress(RHL))); PC++; return 12},
-   // 36 - LD (HL),d8
-   function(){PC++; putAddress(RHL,immediate8()); PC++; return 12},
-   // 37 - SCF
-   function(){FC = 1; FN = 0; FH = 0; PC++; return 4},
-   // 38 - JR C,r8
-   function(){if(FC){
-      PC++; PC+= signImmediate8() +1; return 12
-      }else{PC+=2; return 8};},
-   // 39 - ADD HL,SP
-   function(){RHL = add16(RHL,RSP); PC++; return 8},
-   // 3A - LD A,(HL-)
-   function(){RA = getAddress(RHL); RHL--; if(RHL < 0) RHL = 0xFFFF; PC++; return 8},
-   // 3B - DEC SP
-   function(){RSP--; if(RSP < 0) RSP = 0xFFFF; PC++; return 8},
-   // 3C - INC A
-   function(){RA = increment8(RA); PC++; return 4},
-   // 3D - DEC L
-   function(){RA = decrement8(RA); PC++; return 4},
-   // 3E - LD A,d8
-   function(){PC++; RA = immediate8(); PC++; return 8},
-   // 3F - CCF
-   function(){if(FC) FC = 0; else FC = 1; FN = 0; FH = 0; PC++; return 4},
-   // 40 - LD B,B
-   function(){RB = RB; PC++; return 4},
-   // 41 - LD B,C
-   function(){RB = RC; PC++; return 4},
-   // 42 - LD B,D
-   function(){RB = RD; PC++; return 4},
-   // 43 - LD B,E
-   function(){RB = RE; PC++; return 4},
-   // 44 - LD B,H
-   function(){RB = RHL >> 8; PC++; return 4},
-   // 45 - LD B,L
-   function(){RB = RHL & 0xFF; PC++; return 4},
-   // 46 - LD B,(HL)
-   function(){RB = getAddress(RHL); PC++; return 8},
-   // 47 - LD B,A
-   function(){RB = RA; PC++; return 4},
-   // 48 - LD C,B
-   function(){RC = RB; PC++; return 4},
-   // 49 - LD C,C
-   function(){RC = RC; PC++; return 4},
-   // 4A - LD C,D
-   function(){RC = RD; PC++; return 4},
-   // 4B - LD C,E
-   function(){RC = RE; PC++; return 4},
-   // 4C - LD C,H
-   function(){RC = RHL >> 8; PC++; return 4},
-   // 4D - LD C,L
-   function(){RC = RHL & 0xFF; PC++; return 4},
-   // 4E - LD C,(HL)
-   function(){RC = getAddress(RHL); PC++; return 8},
-   // 4F - LD C,A
-   function(){RC = RA; PC++; return 4},
-   // 50 - LD D,B
-   function(){RD = RB; PC++; return 4},
-   // 51 - LD D,C
-   function(){RD = RC; PC++; return 4},
-   // 52 - LD D,D
-   function(){RD = RD; PC++; return 4},
-   // 53 - LD D,E
-   function(){RD = RE; PC++; return 4},
-   // 54 - LD D,H
-   function(){RD = RHL >> 8; PC++; return 4},
-   // 55 - LD D,L
-   function(){RD = RHL & 0xFF; PC++; return 4},
-   // 56 - LD D,(HL)
-   function(){RD = getAddress(RHL); PC++; return 8},
-   // 57 - LD D,A
-   function(){RD = RA; PC++; return 4},
-   // 58 - LD E,B
-   function(){RE = RB; PC++; return 4},
-   // 59 - LD E,C
-   function(){RE = RC; PC++; return 4},
-   // 5A - LD E,D
-   function(){RE = RD; PC++; return 4},
-   // 5B - LD E,E
-   function(){RE = RE; PC++; return 4},
-   // 5C - LD E,H
-   function(){RE = RHL >> 8; PC++; return 4},
-   // 5D - LD E,L
-   function(){RE = RHL & 0xFF; PC++; return 4},
-   // 5E - LD E,(HL)
-   function(){RE = getAddress(RHL); PC++; return 8},
-   // 5F - LD E,A
-   function(){RE = RA; PC++; return 4},
-   // 60 - LD H,B
-   function(){setH(RB); PC++; return 4},
-   // 61 - LD H,C
-   function(){setH(RC); PC++; return 4},
-   // 62 - LD H,D
-   function(){setH(RD); PC++; return 4},
-   // 63 - LD H,E
-   function(){setH(RE); PC++; return 4},
-   // 64 - LD H,H
-   function(){setH(RHL >> 8); PC++; return 4},
-   // 65 - LD H,L
-   function(){setH(RHL & 0xFF); PC++; return 4},
-   // 66 - LD H,(HL)
-   function(){setH(getAddress(RHL)); PC++; return 8},
-   // 67 - LD H,A
-   function(){setH(RA); PC++; return 4},
-   // 68 - LD L,B
-   function(){setL(RB); PC++; return 4},
-   // 69 - LD L,C
-   function(){setL(RC); PC++; return 4},
-   // 6A - LD L,D
-   function(){setL(RD); PC++; return 4},
-   // 6B - LD L,E
-   function(){setL(RE); PC++; return 4},
-   // 6C - LD L,H
-   function(){setL(RHL >> 8); PC++; return 4},
-   // 6D - LD L,L
-   function(){setL(RHL & 0xFF); PC++; return 4},
-   // 6E - LD L,(HL)
-   function(){setL(getAddress(RHL)); PC++; return 8},
-   // 6F - LD L,A
-   function(){setL(RA); PC++; return 4},
-   // 70 - LD (HL),B
-   function(){putAddress(RHL, RB); PC++; return 8},
-   // 71 - LD (HL),C
-   function(){putAddress(RHL, RC); PC++; return 8},
-   // 72 - LD (HL),D
-   function(){putAddress(RHL, RD); PC++; return 8},
-   // 73 - LD (HL),E
-   function(){putAddress(RHL, RE); PC++; return 8},
-   // 74 - LD (HL),H
-   function(){putAddress(RHL, RHL >> 8); PC++; return 8},
-   // 75 - LD (HL),L
-   function(){putAddress(RHL, RHL & 0xFF); PC++; return 8},
-   // 76 - HALT
-   function(){if(IME == true) stop = true; PC++;  return 4},
-   // 77 - LD (HL),A
-   function(){putAddress(RHL, RA); PC++; return 8},
-   // 78 - LD A,B
-   function(){RA = RB; PC++; return 4},
-   // 79 - LD A,C
-   function(){RA = RC; PC++; return 4},
-   // 7A - LD A,D
-   function(){RA = RD; PC++; return 4},
-   // 7B - LD A,E
-   function(){RA = RE; PC++; return 4},
-   // 7C - LD A,H
-   function(){RA = RHL >> 8; PC++; return 4},
-   // 7D - LD A,L
-   function(){RA = RHL & 0xFF; PC++; return 4},
-   // 7E - LD A,(HL)
-   function(){RA = getAddress(RHL); PC++; return 8},
-   // 7F - LD A,A
-   function(){RA = RA; PC++; return 4},
-   // 80 - ADD A,B
-   function(){RA = add8(RA,RB); PC++; return 4},
-   // 81 - ADD A,C
-   function(){RA = add8(RA,RC); PC++; return 4},
-   // 82 - ADD A,D
-   function(){RA = add8(RA,RD); PC++; return 4},
-   // 83 - ADD A,E
-   function(){RA = add8(RA,RE); PC++; return 4},
-   // 84 - ADD A,H
-   function(){RA = add8(RA,RHL >> 8); PC++; return 4},
-   // 85 - ADD A,L
-   function(){RA = add8(RA,RHL & 0xFF); PC++; return 4},
-   // 86 - ADD A,(HL)
-   function(){RA = add8(RA,getAddress(RHL)); PC++; return 8},
-   // 87 - ADD A,A
-   function(){RA = add8(RA,RA); PC++; return 4},
-   // 88 - ADC A,B
-   function(){RA = adc8(RA,RB); PC++; return 4},
-   // 89 - ADC A,C
-   function(){RA = adc8(RA,RC); PC++; return 4},
-   // 8A - ADC A,D
-   function(){RA = adc8(RA,RD); PC++; return 4},
-   // 8B - ADC A,E
-   function(){RA = adc8(RA,RE); PC++; return 4},
-   // 8C - ADC A,H
-   function(){RA = adc8(RA,RHL >> 8); PC++; return 4},
-   // 8D - ADC A,L
-   function(){RA = adc8(RA,RHL & 0xFF); PC++; return 4},
-   // 8E - ADC A,(HL)
-   function(){RA = adc8(RA,getAddress(RHL)); PC++; return 8},
-   // 8F - ADC A,A
-   function(){RA = adc8(RA,RA); PC++; return 4},
-   // 90 - SUB B
-   function(){RA = sub8(RA,RB); PC++; return 4},
-   // 91 - SUB C
-   function(){RA = sub8(RA,RC); PC++; return 4},
-   // 92 - SUB D
-   function(){RA = sub8(RA,RD); PC++; return 4},
-   // 93 - SUB E
-   function(){RA = sub8(RA,RE); PC++; return 4},
-   // 94 - SUB H
-   function(){RA = sub8(RA,RHL >> 8); PC++; return 4},
-   // 95 - SUB L
-   function(){RA = sub8(RA,RHL & 0xFF); PC++; return 4},
-   // 96 - SUB (HL)
-   function(){RA = sub8(RA,getAddress(RHL)); PC++; return 8},
-   // 97 - SUB A
-   function(){RA = sub8(RA,RA); PC++; return 4},
-   // 98 - SBC A,B
-   function(){RA = sbc8(RA,RB); PC++; return 4},
-   // 99 - SBC A,C
-   function(){RA = sbc8(RA,RC); PC++; return 4},
-   // 9A - SBC A,D
-   function(){RA = sbc8(RA,RD); PC++; return 4},
-   // 9B - SBC A,E
-   function(){RA = sbc8(RA,RE); PC++; return 4},
-   // 9C - SBC A,H
-   function(){RA = sbc8(RA,RHL >> 8); PC++; return 4},
-   // 9D - SBC A,L
-   function(){RA = sbc8(RA,RHL & 0xFF); PC++; return 4},
-   // 9E - SBC A,(HL)
-   function(){RA = sbc8(RA,getAddress(RHL)); PC++; return 8},
-   // 9F - SBC A,A
-   function(){RA = sbc8(RA,RA); PC++; return 4},
-   // A0 - AND B
-   function(){RA = and8(RA,RB); PC++; return 4},
-   // A1 - AND C
-   function(){RA = and8(RA,RC); PC++; return 4},
-   // A2 - AND D
-   function(){RA = and8(RA,RD); PC++; return 4},
-   // A3 - AND E
-   function(){RA = and8(RA,RE); PC++; return 4},
-   // A4 - AND H
-   function(){RA = and8(RA,RHL >> 8); PC++; return 4},
-   // A5 - AND L
-   function(){RA = and8(RA,RHL & 0xFF); PC++; return 4},
-   // A6 - AND (HL)
-   function(){RA = and8(RA,getAddress(RHL)); PC++; return 8},
-   // A7 - AND A
-   function(){RA = and8(RA,RA); PC++; return 4},
-   // A8 - XOR B
-   function(){RA = xor8(RA,RB); PC++; return 4},
-   // A9 - XOR C
-   function(){RA = xor8(RA,RC); PC++; return 4},
-   // AA - XOR D
-   function(){RA = xor8(RA,RD); PC++; return 4},
-   // AB - XOR E
-   function(){RA = xor8(RA,RE); PC++; return 4},
-   // AC - XOR H
-   function(){RA = xor8(RA,RHL >> 8); PC++; return 4},
-   // AD - XOR L
-   function(){RA = xor8(RA,RHL & 0xFF); PC++; return 4},
-   // AE - XOR (HL)
-   function(){RA = xor8(RA,getAddress(RHL)); PC++; return 8},
-   // AF - XOR A
-   function(){RA = xor8(RA,RA); PC++; return 4},
-   // B0 - OR B
-   function(){RA = or8(RA,RB); PC++; return 4},
-   // B1 - OR C
-   function(){RA = or8(RA,RC); PC++; return 4},
-   // B2 - OR D
-   function(){RA = or8(RA,RD); PC++; return 4},
-   // B3 - OR E
-   function(){RA = or8(RA,RE); PC++; return 4},
-   // B4 - OR H
-   function(){RA = or8(RA,RHL >> 8); PC++; return 4},
-   // B5 - OR L
-   function(){RA = or8(RA,RHL & 0xFF); PC++; return 4},
-   // B6 - OR (HL)
-   function(){RA = or8(RA,getAddress(RHL)); PC++; return 8},
-   // B7 - OR A
-   function(){RA = or8(RA,RA); PC++; return 4},
-   // B8 - CP B
-   function(){sub8(RA,RB); PC++; return 4},
-   // B9 - CP C
-   function(){sub8(RA,RC); PC++; return 4},
-   // BA - CP D
-   function(){sub8(RA,RD); PC++; return 4},
-   // BB - CP E
-   function(){sub8(RA,RE); PC++; return 4},
-   // BC - CP H
-   function(){sub8(RA,RHL >> 8); PC++; return 4},
-   // BD - CP L
-   function(){sub8(RA,RHL & 0xFF); PC++; return 4},
-   // BE - CP (HL)
-   function(){sub8(RA,getAddress(RHL)); PC++; return 8},
-   // BF - CP A
-   function(){sub8(RA,RA); PC++; return 4},
-   // C0 - RET NZ
-   function(){if(!FZ){ret();  return 20} else PC++; return 8},
-   // C1 - POP BC
-   function(){var data = getAddress16(RSP); RB = data >> 8; RC = data & 0xFF; RSP+=2; PC++; return 12},
-   // C2 - JP NZ,a16
-   function(){if(!FZ){
-      PC++; PC = immediate16(); return 16
-      }else{PC+=3; return 12}},
-   // C3 - JP a16
-   function(){PC++; PC = immediate16(); return 16},
-   // C4 - CALL NZ,a16
-   function(){if(!FZ){
-      PC++; var ad=immediate16(); PC+=2; call(ad); return 24
-      }else{PC+=3; return 12}},
-   // C5 - PUSH BC
-   function(){RSP-=2; putAddress16(RSP, (RB << 8) | RC); PC++; return 16},
-   // C6 - ADD A,d8
-   function(){PC++; RA = add8(RA, immediate8()); PC++; return 8},
-   // C7 - RST 00H
-   function(){PC++; call(0); return 16},
-   // C8 - RET Z
-   function(){if(FZ){ret(); return 20} else PC++; return 8},
-   // C9 - RET
-   function(){ret(); return 16},
-   // CA - JP Z,a16
-   function(){if(FZ){
-      PC++; PC = immediate16(); return 16
-      }else{PC+=3; return 12}},
-   // CB - PREFIX CB
-   function(){PC++; cbinstruction(immediate8()); PC++; return 8},
-   // CC - CALL Z,a16
-   function(){if(FZ){
-      PC++; var ad=immediate16(); PC+=2; call(ad); return 24
-      }else{PC+=3; return 12}},
-   // CD - CALL a16
-   function(){PC++; var ad=immediate16(); PC+=2; call(ad); return 24},
-   // CE - ADC A,d8
-   function(){PC++; RA = adc8(RA, immediate8()); PC++; return 8},
-   // CF - RST 08H
-   function(){PC++; call(8); return 16},
-   // D0 - RET NC
-   function(){if(!FC){ret(); return 20} else PC++; return 8},
-   // D1 - POP DE
-   function(){var data = getAddress16(RSP); RD = data >> 8; RE = data & 0xFF; RSP+=2; PC++; return 12},
-   // D2 - JP NC,a16
-   function(){if(!FC){
-      PC++; PC = immediate16(); return 16
-      }else{PC+=3; return 12}},
-   // D3 - 
-   function(){},
-   // D4 - CALL NC,a16
-   function(){if(!FC){
-      PC++;  var ad=immediate16(); PC+=2; call(ad); return 24
-      }else{PC+=3; return 12}},
-   // D5 - PUSH DE
-   function(){RSP-=2; putAddress16(RSP, (RD << 8) | RE); PC++; return 16},
-   // D6 - SUB d8
-   function(){PC++; RA = sub8(RA, immediate8()); PC++; return 8},
-   // D7 - RST 10H
-   function(){PC++; call(16); return 16},
-   // D8 - RET C
-   function(){if(FC){ret(); return 20} else PC++; return 8},
-   // D9 - RETI
-   function(){IME = true; ret(); return 16},
-   // DA - JP C,a16
-   function(){if(FC){
-      PC++; PC = immediate16(); return 16
-      }else{PC+=3; return 12}},
-   // DB - 
-   function(){},
-   // DC - CALL C,a16
-   function(){if(FC){
-      PC++;  var ad=immediate16(); PC+=2; call(ad); return 24
-      }else{PC+=3; return 12}},
-   // DD - 
-   function(){},
-   // DE - SBC A,d8
-   function(){PC++; RA = sbc8(RA, immediate8()); PC++; return 8},
-   // DF - RST 18H
-   function(){PC++; call(24); return 16},
-   // E0 - LDH (a8),A
-   function(){PC++; putAddress((255 << 8) + immediate8(), RA); PC++; return 12},
-   // E1 - POP HL
-   function(){RHL = getAddress16(RSP); RSP+=2; PC++; return 12},
-   // E2 - LD (C),A
-   function(){putAddress((255 << 8) + RC, RA); PC++; return 8},
-   // E3 - 
-   function(){},
-   // E4 - 
-   function(){},
-   // E5 - PUSH HL
-   function(){RSP-=2; putAddress16(RSP, RHL); PC++; return 16},
-   // E6 - AND d8
-   function(){PC++; RA = and8(RA, immediate8()); PC++; return 8},
-   // E7 - RST 20H
-   function(){PC++; call(32); return 16},
-   // E8 - ADD SP,r8
-   function(){PC++; RSP = add16(RSP, signImmediate8()); FZ = 0; PC++; return 16},
-   // E9 - JP (HL)
-   function(){PC = RHL; return 4},
-   // EA - LD (a16),A
-   function(){PC++; putAddress(immediate16(), RA); PC+=2; return 16},
-   // EB - 
-   function(){},
-   // EC - 
-   function(){},
-   // ED - 
-   function(){},
-   // EE - XOR A,d8
-   function(){PC++; RA = xor8(RA, immediate8()); PC++; return 8},
-   // EF - RST 28H
-   function(){PC++; call(40); return 16},
-   // F0 - LDH A,(a8)
-   function(){PC++; RA = getAddress(0xFF00 + immediate8()); PC++; return 12},
-   // F1 - POP AF
-   function(){var data = getAddress16(RSP); RA = data >> 8;
-         FZ = Math.round((data & 0x80)/0x80); FN = Math.round((data & 0x40)/0x40); FH = Math.round((data & 0x20)/0x20); FC = Math.round((data & 0x10)/0x10); RSP+=2; PC++; return 12},
-   // F2 - LD A,(C)
-   function(){RA = getAddress(0xFF00 + RC); PC++; return 8},
-   // F3 - DI
-   function(){IME = false; PC++; return 4},
-   // F4 - 
-   function(){},
-   // F5 - PUSH AF
-   function(){RSP-=2; putAddress16(RSP, (RA << 8) | (FZ << 7) | (FN << 6) | (FH << 5) | (FC << 4)); PC++; return 16},
-   // F6 - OR d8
-   function(){PC++; RA = or8(RA, immediate8()); PC++; return 8},
-   // F7 - RST 30H
-   function(){PC++; call(48); return 16},
-   // F8 - LD HL,SP+r8
-   function(){PC++; RHL = add16(RSP, signImmediate8()); FZ = 0; PC++; return 12},
-   // F9 - LD SP,HL
-   function(){RSP = RHL; PC++; return 8},
-   // FA - LD A,(a16)
-   function(){PC++; RA = getAddress(immediate16()); PC+=2; return 16},
-   // FB - EI
-   function(){IME = true; PC++; foreign.executeInt(); return 4},
-   // FC - 
-   function(){},
-   // FD - 
-   function(){},
-   // FE - CP d8
-   function(){PC++; sub8(RA, immediate8()); PC++; return 8},
-   // FF - RST 38H
-   function(){PC++; call(56); return 16}
-);*/
