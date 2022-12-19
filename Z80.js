@@ -984,7 +984,7 @@ var Z80 = function(stdlib, foreign){
 
          timerDivider = (timerDivider + length)|0;
          if ((timerDivider|0) >= 256) {
-            timerDivider = (timerDivider|0 % 256)|0;
+            timerDivider = ((timerDivider|0) % 256)|0;
             timerDividerIncrement();
          }
 
