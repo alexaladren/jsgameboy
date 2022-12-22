@@ -696,6 +696,11 @@ var GameBoy = function(rom, canvas){
       this.audioChannerl3Buffer.copyToChannel(pattern, 0);
 
       this.audioChannel3Wave = new AudioBufferSourceNode(this.audioContext, { buffer: this.audioChannerl3Buffer, loop: true })
+
+      let channel3Wavelength = ((this.io8bit[0x1E] & 0x07) << 8) | this.io8bit[0x1D];
+      let frequency = 65536 / (2048 - channel3Wavelength);
+      this.audioChannel3Wave.playbackRate.value = frequency / 1000;
+
       this.audioChannel3Wave.connect(this.audioChannel3Volume);
       this.audioChannel3Wave.start();
    }
