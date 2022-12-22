@@ -177,7 +177,7 @@ var GameBoy = function(rom, canvas){
 
    let noiseBuffer = new Float32Array(44100);
    for (let i = 0; i < noiseBuffer.length; i++) {
-      noiseBuffer[i] = Math.random() * 2 - 1;
+      noiseBuffer[i] = Math.random() > 0.5 ? 1 : 0;
    }
    let noiseAudioBuffer = new AudioBuffer({
       length: noiseBuffer.length,
@@ -606,7 +606,11 @@ var GameBoy = function(rom, canvas){
          } else if (address == 0x20) {
             this.audioChannel4Timer = data & 0x3F;
          } else if (address == 0x22) {
-            // TODO
+            let shift = (data & 0xF0) >> 4;
+            let divider = data & 0x07;
+            if (divider == 0) divider = 0.5;
+            let frequency = 262144 / (divider * Math.pow(2, shift));
+            this.audioChannel4Wave.playbackRate.value = frequency / 44100;
          } else if (address == 0x23) {
             if (data & 0x80) {
                this.triggerChannel4();
@@ -664,7 +668,6 @@ var GameBoy = function(rom, canvas){
    }
 
    this.triggerChannel3 = function () {
-      //this.audioChannel3Control.gain.value = 1;
       this.audioChannel3Timer = this.io8bit[0x1B];
    }
 
