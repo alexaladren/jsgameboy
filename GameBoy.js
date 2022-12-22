@@ -848,19 +848,20 @@ var GameBoy = function(rom, canvas){
             let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
             let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
             let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
-            let spriteColor = bit0 | bit1;
+            let colorIndex = bit0 | bit1;
 
-            if (spriteColor > 0) {
+            if (colorIndex > 0) {
+               let palette;
                if (spriteAttrs & 0x08) {
-                  spriteColor |= 0x0C;
+                  palette = this.io8bit[0x49];
                } else {
-                  spriteColor |= 0x08;
+                  palette = this.io8bit[0x48];
                }
 
                if (spriteAttrs & 0x80) {
-                  spriteUnderColor = spriteColor;
+                  spriteUnderColor = (palette >> (colorIndex * 2)) & 0x03;
                } else {
-                  color = spriteColor;
+                  color = (palette >> (colorIndex * 2)) & 0x03;
                }
                break;
             }
@@ -868,6 +869,7 @@ var GameBoy = function(rom, canvas){
 
          // Window
          if(color == -1 && lcdControl & 0x20 && line >= this.io8bit[0x4A] && this.io8bit[0x4A] < 143 && this.io8bit[0x4B] < 166){
+            let paletteBg = this.io8bit[0x47];
 
             let winPixelX = (x - this.io8bit[0x4B] + 7);
             let winPixelY = (line - this.io8bit[0x4A]);
@@ -891,12 +893,15 @@ var GameBoy = function(rom, canvas){
                let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
                let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
                let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
-               color = bit0 | bit1;
+               let colorIndex = bit0 | bit1;
+               color = (paletteBg >> (colorIndex * 2)) & 0x03;
             }
          }
 
          // BG
          if(color == -1 && lcdControl & 0x01){
+            let paletteBg = this.io8bit[0x47];
+
             let bgPixelX = (x + this.io8bit[0x43] + 256) % 256;
             let bgPixelY = (line + this.io8bit[0x42] + 256) % 256;
             let bgTileX = Math.floor(bgPixelX / 8);
@@ -917,7 +922,8 @@ var GameBoy = function(rom, canvas){
             let secondByte = this.vram8bit[tileDataAddress + (tileY * 2) + 1];
             let bit0 = (firstByte & (1 << (7 - tileX))) > 0 ? 0x01 : 0;
             let bit1 = (secondByte & (1 << (7 - tileX))) > 0 ? 0x02 : 0;
-            color = bit0 | bit1;
+            let colorIndex = bit0 | bit1;
+            color = (paletteBg >> (colorIndex * 2)) & 0x03;
          }
 
          if (color == 0 && spriteUnderColor != -1) {
@@ -929,32 +935,10 @@ var GameBoy = function(rom, canvas){
    }
 
    this.drawScreenCanvas2D = function () {
-
-      let paletteBg = this.io8bit[0x47];
-      let paletteObj0 = this.io8bit[0x48];
-      let paletteObj1 = this.io8bit[0x49];
-
       let ctx = /** @type {CanvasRenderingContext2D} */ (this.canvas.getContext("2d"));
       let imageData = ctx.getImageData(0, 0, this.LCD_WIDTH, this.LCD_HEIGHT);
       for (let i = 0; i < this.lcd.length; i++) {
          let color = this.lcd[i];
-         let value = 0;
-         if (color == -1) {
-            value = 0;
-         } else if (color & 0x08) {
-            if (color & 0x04) {
-               color &= 0x03;
-               value = (paletteObj1 >> (color * 2)) & 0x03;
-            } else {
-               color &= 0x03;
-               value = (paletteObj0 >> (color * 2)) & 0x03;
-            }
-         } else {
-            value = (paletteBg >> (color * 2)) & 0x03;
-         }
-         /*imageData.data[i * 4] = this.COLORS[value][0];
-         imageData.data[i * 4 + 1] = this.COLORS[value][1];
-         imageData.data[i * 4 + 2] = this.COLORS[value][2];*/
          imageData.data[i * 4] = this.COLORS[color & 0x03][0];
          imageData.data[i * 4 + 1] = this.COLORS[color & 0x03][1];
          imageData.data[i * 4 + 2] = this.COLORS[color & 0x03][2];
