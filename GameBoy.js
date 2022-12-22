@@ -153,6 +153,28 @@ var GameBoy = function(rom, canvas){
    this.audioChannel2VolumeValue = 0;
    this.audioChannel2Timer = 0;
 
+   // 1ms = 1 loop
+   this.audioChannerl3Buffer = new AudioBuffer({
+      length: 32,
+      sampleRate: 32000,
+      channelInterpretation: "discrete"
+   })
+
+   this.audioChannel3Wave = new AudioBufferSourceNode(this.audioContext, { buffer: this.audioChannerl3Buffer, loop: true })
+   this.audioChannel3Volume = new GainNode(this.audioContext, { gain: 0});
+   this.audioChannel3Panner = new StereoPannerNode(this.audioContext, { pan: 0 });
+   this.audioChannel3PannerVolume = new GainNode(this.audioContext, { gain: 1 });
+   this.audioChannel3Control = new GainNode(this.audioContext, { gain: 0 });
+   this.audioChannel3Wave
+      .connect(this.audioChannel3Volume)
+      .connect(this.audioChannel3Panner)
+      .connect(this.audioChannel3PannerVolume)
+      .connect(this.audioChannel3Control)
+      .connect(this.audioSplitter);
+   this.audioChannel3Timer = 0;
+
+   this.ch3PatternNeedsUpdate = false;
+
    let noiseBuffer = new Float32Array(44100);
    for (let i = 0; i < noiseBuffer.length; i++) {
       noiseBuffer[i] = Math.random() * 2 - 1;
@@ -180,6 +202,7 @@ var GameBoy = function(rom, canvas){
 
    this.audioChannel1Wave.start();
    this.audioChannel2Wave.start();
+   this.audioChannel3Wave.start();
    this.audioChannel4Wave.start();
 
    this.init = function(){
@@ -191,8 +214,11 @@ var GameBoy = function(rom, canvas){
    this.pause = function(){
       if(!this.paused){
          this.paused = true;
+         this.audioMaster.gain.value = 0;
+
       }else{
          this.paused = false;
+         this.audioMaster.gain.value = 0.2;
       }
    }
    
@@ -555,6 +581,28 @@ var GameBoy = function(rom, canvas){
                   this.triggerChannel2();
                }
             }
+         } else if (address == 0x1A) {
+            this.audioChannel3Control.gain.value = data & 0x80 ? 1 : 0;
+         } else if (address == 0x1B) {
+            this.audioChannel3Timer = data;
+         } else if (address == 0x1C) {
+            let volumeValue = 0;
+            switch ((data & 0x60) >> 5) {
+               case 0: volumeValue = 0; break;
+               case 1: volumeValue = 1; break;
+               case 2: volumeValue = 0.5; break;
+               case 3: volumeValue = 0.25; break;
+            }
+            this.audioChannel3Volume.gain.value = volumeValue;
+         } else if (address == 0x1D || address == 0x1E) {
+            let channel3Wavelength = ((this.io8bit[0x1E] & 0x07) << 8) | this.io8bit[0x1D];
+            let frequency = 65536 / (2048 - channel3Wavelength);
+            this.audioChannel3Wave.playbackRate.value = frequency / 1000;
+            if (address == 0x1E) {
+               if (data & 0x80) {
+                  this.triggerChannel3();
+               }
+            }
          } else if (address == 0x20) {
             this.audioChannel4Timer = data & 0x3F;
          } else if (address == 0x22) {
@@ -583,12 +631,14 @@ var GameBoy = function(rom, canvas){
             if (data & 0x01) pan1 += 1;
             this.audioChannel1Panner.pan.value = pan1;
             this.audioChannel2Panner.pan.value = pan2;
-            //this.audioChannel3Panner.pan.value = pan3;
+            this.audioChannel3Panner.pan.value = pan3;
             this.audioChannel4Panner.pan.value = pan4;
             this.audioChannel4PannerVolume.gain.value = data & 0x88 ? 1 : 0;
-            //this.audioChannel3PannerVolume.gain.value = data & 0x44 ? 1 : 0;
+            this.audioChannel3PannerVolume.gain.value = data & 0x44 ? 1 : 0;
             this.audioChannel2PannerVolume.gain.value = data & 0x22 ? 1 : 0;
             this.audioChannel1PannerVolume.gain.value = data & 0x11 ? 1 : 0;
+         } else if (address >= 0x30 && address <= 0x3F) {
+            this.ch3PatternNeedsUpdate = true;
          }
       }
    }
@@ -607,24 +657,54 @@ var GameBoy = function(rom, canvas){
    this.triggerChannel2 = function () {
       this.audioChannel2Control.gain.value = 1;
 
-      this.audioChannel2VolumeValue = (this.io8bit[0x12] & 0xF0) >> 4;
+      this.audioChannel2VolumeValue = (this.io8bit[0x17] & 0xF0) >> 4;
       this.audioChannel2Volume.gain.value = this.audioChannel2VolumeValue / 15;
       
       this.audioChannel2Timer = this.io8bit[0x16] & 0x3F;
    }
 
+   this.triggerChannel3 = function () {
+      //this.audioChannel3Control.gain.value = 1;
+      this.audioChannel3Timer = this.io8bit[0x1B];
+   }
+
    this.triggerChannel4 = function () {
       this.audioChannel4Control.gain.value = 1;
 
-      this.audioChannel4VolumeValue = (this.io8bit[0x12] & 0xF0) >> 4;
+      this.audioChannel4VolumeValue = (this.io8bit[0x21] & 0xF0) >> 4;
       this.audioChannel4Volume.gain.value = this.audioChannel4VolumeValue / 15;
 
       this.audioChannel4Timer = this.io8bit[0x20] & 0x3F;
    }
 
+   this.updateCH3WavePattern = function () {
+
+      this.audioChannel3Wave.disconnect();
+      this.audioChannel3Wave.stop();
+
+      let pattern = new Float32Array(32);
+      for (let i = 0; i <= 0xF; i++) {
+         let byte = this.io8bit[0x30 + i];
+         let upperNibble = (byte % 0xF0) >> 4;
+         pattern[i * 2] = upperNibble / 15;
+         let lowerNibble = byte & 0x0F;
+         pattern[i * 2 + 1] = lowerNibble / 15;
+      }
+      this.audioChannerl3Buffer.copyToChannel(pattern, 0);
+
+      this.audioChannel3Wave = new AudioBufferSourceNode(this.audioContext, { buffer: this.audioChannerl3Buffer, loop: true })
+      this.audioChannel3Wave.connect(this.audioChannel3Volume);
+      this.audioChannel3Wave.start();
+   }
+
    this.divAPUTick = function () {
       this.divAPU = (this.divAPU + 1) % 256;
       if (!this.audioEnabled) return;
+
+      if (this.ch3PatternNeedsUpdate) {
+         this.updateCH3WavePattern();
+         this.ch3PatternNeedsUpdate = false;
+      }
 
       if (this.divAPU % 8 == 0) {
          // Envelope sweep - 64Hz
@@ -673,6 +753,14 @@ var GameBoy = function(rom, canvas){
             this.audioChannel2Timer++;
             if (this.audioChannel2Timer == 64) {
                this.audioChannel2Control.gain.value = 0;
+            }
+         }
+
+         let ch3Control = this.io8bit[0x1E];
+         if ((ch3Control & 0x40) && this.audioChannel3Timer < 64) {
+            this.audioChannel3Timer++;
+            if (this.audioChannel3Timer == 64) {
+               this.audioChannel3Control.gain.value = 0;
             }
          }
 
