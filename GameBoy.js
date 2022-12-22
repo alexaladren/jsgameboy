@@ -96,6 +96,20 @@ var GameBoy = function(rom, canvas){
 
    this.audioContext = new AudioContext();
 
+   // https://www.falstad.com/fourier/
+   this.wave12 = new PeriodicWave(this.audioContext, {
+      real: [0.7516, -0.4474, -0.3163, -0.1489, 0.00076, 0.09104, 0.10789, 0.06698, 0.00318, -0.04702, -0.06144, -0.03965, 0.00068],
+      imag: [0, 0.18564, 0.31712, 0.36135, 0.31819, 0.2181, 0.1073, 0.02762, 0.0002, 0.02, 0.0624, 0.09768, 0.10576]
+   });
+   this.wave25 = new PeriodicWave(this.audioContext, {
+      real: [0.5039, -0.6346, -0.0039, 0.2140, 0.0078, -0.1252, -0.0039, 0.0927, 0.0078, -0.0686, -0.0039, 0.0595, 0.0078],
+      imag: [0.0000, 0.6308, 0.6366, 0.2180, 0.0001, 0.1215, 0.2120, 0.0967, 0.0002, 0.0678, 0.1270, 0.0637, 0.0002]
+   });
+   this.wave50 = new PeriodicWave(this.audioContext, {
+      real: [0, 0.0039, 0, 0.0039, 0, 0.0039, 0, 0.0039, 0, 0.0039, 0, 0.0039, 0],
+      imag: [0, 1.2732, 0, 0.4244, 0, 0.2546, 0, 0.1819, 0, 0.1414, 0, 0.1157, 0]
+   });
+
    this.audioSplitter = new ChannelSplitterNode(this.audioContext, {numberOfOutputs: 2});
    this.audioLeftVolume = new GainNode(this.audioContext, {gain: 1});
    this.audioSplitter.connect(this.audioLeftVolume, 0);
@@ -124,8 +138,6 @@ var GameBoy = function(rom, canvas){
       .connect(this.audioSplitter);
    this.audioChannel1VolumeValue = 0;
    this.audioChannel1Timer = 0;
-
-   console.log(this.audioRightVolume);
 
    this.audioChannel2Wave = new OscillatorNode(this.audioContext, { type: "square" })
    this.audioChannel2Volume = new GainNode(this.audioContext, { gain: 0 });
@@ -510,6 +522,13 @@ var GameBoy = function(rom, canvas){
          } else if (address == 0x0F) {
             this.checkForInterrupts();
          } else if (address == 0x11) {
+            let duty = (data & 0xC0) >> 6;
+            switch (duty) {
+               case 0: this.audioChannel1Wave.setPeriodicWave(this.wave12); break;
+               case 1: this.audioChannel1Wave.setPeriodicWave(this.wave25); break;
+               case 2: this.audioChannel1Wave.setPeriodicWave(this.wave50); break;
+               case 3: this.audioChannel1Wave.setPeriodicWave(this.wave25); break;
+            }
             this.audioChannel1Timer = data & 0x3F;
          } else if (address == 0x13 || address == 0x14) {
             let channel1Wavelength = ((this.io8bit[0x14] & 0x07) << 8) | this.io8bit[0x13];
@@ -520,6 +539,13 @@ var GameBoy = function(rom, canvas){
                }
             }
          } else if (address == 0x16) {
+            let duty = (data & 0xC0) >> 6;
+            switch (duty) {
+               case 0: this.audioChannel2Wave.setPeriodicWave(this.wave12); break;
+               case 1: this.audioChannel2Wave.setPeriodicWave(this.wave25); break;
+               case 2: this.audioChannel2Wave.setPeriodicWave(this.wave50); break;
+               case 3: this.audioChannel2Wave.setPeriodicWave(this.wave25); break;
+            }
             this.audioChannel2Timer = data & 0x3F;
          } else if (address == 0x18 || address == 0x19) {
             let channel2Wavelength = ((this.io8bit[0x19] & 0x07) << 8) | this.io8bit[0x18];
