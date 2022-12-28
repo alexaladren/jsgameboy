@@ -26,41 +26,26 @@ body{
 }
 
 h1{
-	background: #f2f8ff;
-	background: -moz-linear-gradient(top, #ffffff, #f2f8ff);
 	padding: 10px;
 	margin: 5px;
-	border: 1px solid #80bfff;
-	border-radius: 5px;
-	box-shadow: 0 3px 5px #f2f9ff;
 	text-align: center;
 	font-weight: normal;
 	letter-spacing: 2px;
 }
 
 #wrapper{
-	width: 600px;
+	width: 700px;
 	margin: 0 auto;
 }
 
 .left-column{
 	float: left;
-	width: 355px;
+	width: 400px;
 }
 
 .right-column{
 	float:right;
-	width: 230px;
-}
-
-.box{
-	background: #cce5ff;
-	background: -moz-linear-gradient(top, #e5f2ff, #cce5ff);
-	padding: 10px;
-	margin: 5px;
-	border: 1px solid #0080ff;
-	border-radius: 5px;
-	box-shadow: 0 3px 5px #e5f2ff;
+	width: 250px;
 }
 
 .title{
@@ -70,52 +55,166 @@ h1{
 }
 
 .button{
-	background: #e5f2ff;
+	background: #80bfff;
 	cursor: pointer;
-	font-size: 12px;
-	margin-top: 5px;
-	padding: 3px;
-	border: 1px solid #80bfff;
-	border-radius: 3px;
+	font-size: 16px;
+	font-weight: bold;
+	padding: 12px;
+	border-radius: 30px;
 	text-align: center;
-	box-shadow: 0 0 0 1px white inset;
 }
 .button:hover{
-	background: #f2f9ff;
+	box-shadow: 0 0 10px 10px rgba(255, 255, 255, 0.3) inset;
 }
 
-.box.display{
-	text-align: right;
-	position: relative;
+.gb {
+	margin: 5px;
+	background: #d7d3d0;
+	border-radius: 10px;
+	text-align: center;
+	padding: 20px;
 }
+.gb .display {
+	padding: 10px;
+	background: #8c858b;
+	border-radius: 3px;
+}
+
 #display{
 	background: white;
-	border: 1px solid #80bfff;
 }
 #fps {
 	font-size: 8px;
-	position: absolute;
-	left: 10px;
-	bottom: 2px;
 }
 
-.box.controls table{
-	width: 100%;
-}
-.box.controls table td:nth-child(2n+1){
-	margin: 3px 3px 3px 8px;
-	padding: 1px 5px;
-	background: #fafafa;
-	border: 1px solid #808080;
-	border-radius: 8px;
-	box-shadow: 0 -1px 3px #CCCCCC inset;
-	text-align: center;
-	font-size: 14px;
-}
-.box.controls table td:nth-child(2n){
-	font-size: 10px;
-	text-align: left;
+.gb .controls {
+	position: relative;
 	text-transform: uppercase;
+	height: 200px;
+	margin: 20px 10px;
+	font-weight: bold;
+	color: rgba(255, 255, 255, 0.8);
+}
+.gb .controls > * {
+	position: absolute;
+}
+.gb .controls > .pressed {
+	box-shadow: 0 0 10px 10px rgba(255, 255, 255, 0.3) inset;
+}
+#key-up, #key-down, #key-left, #key-right {
+	width: 32px;
+	height: 32px;
+	background: #555;
+	line-height: 30px;
+	font-size: 22px;
+}
+#key-up {
+	left: 32px;
+	top: 0px;
+	border-radius: 8px 8px 0 0;
+}
+#key-down {
+	left: 32px;
+	top: 64px;
+	border-radius: 0 0 8px 8px;
+}
+#key-left {
+	left: 0px;
+	top: 32px;
+	border-radius: 8px 0 0 8px;
+}
+#key-right {
+	left: 64px;
+	top: 32px;
+	border-radius: 0 8px 8px 0;
+}
+#key-a, #key-b {
+	width: 32px;
+	height: 32px;
+	background: #9a2358;
+	line-height: 30px;
+	border-radius: 32px;
+	transform: rotate(-15deg);
+}
+#key-a::after, #key-b::after {
+	position: absolute;
+	left: 12px;
+	bottom: -26px;
+	color: #44418c;
+}
+#key-a {
+	right: 0;
+	top: 16px;
+}
+#key-a::after{
+	content: "A";
+}
+#key-b {
+	right: 48px;
+	top: 32px;
+}
+#key-b::after{
+	content: "B";
+}
+#key-start, #key-select {
+	width: 48px;
+	height: 18px;
+	background: #7d767b;
+	line-height: 14px;
+	border-radius: 32px;
+	transform: rotate(-15deg)
+}
+#key-start::after, #key-select::after {
+	position: absolute;
+	left: 0;
+	bottom: -20px;
+	color: #44418c;
+}
+#key-start {
+	bottom: 32px;
+	right: calc(50% - 72px);
+}
+#key-start::after {
+	content: "START";
+}
+#key-select {
+	bottom: 32px;
+	left: calc(50% - 72px);
+}
+#key-select::after {
+	content: "SELECT";
+}
+
+.emulator-controls {
+	background: rgba(255, 255, 255, 0.5);
+	border-radius: 3px;
+	padding: 5px;
+	display: flex;
+	justify-content: space-between;
+	align-content: center;
+	align-items: center;
+}
+
+#cartridge-data {
+	margin-top: 10px;
+	background: #b2acae;
+	padding: 12px 12px 12px 12px;
+	border-radius: 3px 20px 3px 3px;
+}
+#cartridge-data .title {
+	background: rgba(255, 255, 255, 0.5);
+	margin-bottom: 10px;
+	padding: 5px;
+	border-radius: 30px;
+}
+#cartridge{
+	border-radius: 3px;
+	background: white;
+	padding: 10px;
+	text-align: right;
+	font-size: 12px;
+	font-style: italic;
+	margin-bottom: 10px;
 }
 
 .copyright{
@@ -127,17 +226,3 @@ h1{
 	text-decoration: none;
 }
 
-#romlist div{
-	border-bottom: 1px solid #80bfff;
-	padding-left: 5px;
-	cursor: pointer;
-}
-#romlist div:hover{
-	background: rgba(255,255,255,0.4);
-}
-
-#cartridge{
-	text-align: right;
-	font-size: 12px;
-	font-style: italic;
-}

@@ -786,7 +786,7 @@ var Z80 = function(stdlib, foreign){
       PC=(PC+1)|0; PC = immediate16()|0; return 16
       } PC=PC+3|0; return 12};
    // D3 - 
-   function instD3(){return 0;};
+   function instD3(){return 1;};
    // D4 - CALL NC,a16
    function instD4(){var ad=0; if(!FC){
       PC=(PC+1)|0; ad=immediate16()|0; PC=(PC+2)|0; call(ad); return 24
@@ -806,13 +806,13 @@ var Z80 = function(stdlib, foreign){
       PC=(PC+1)|0; PC = immediate16()|0; return 16
       } PC=PC+3|0; return 12};
    // DB - 
-   function instDB(){return 0;};
+   function instDB(){return 1;};
    // DC - CALL C,a16
    function instDC(){var ad=0; if(FC){
       PC=(PC+1)|0; ad=immediate16()|0; PC=(PC+2)|0; call(ad); return 24
       } PC=PC+3|0; return 12};
    // DD - 
-   function instDD(){return 0;};
+   function instDD(){return 1;};
    // DE - SBC A,d8
    function instDE(){PC=(PC+1)|0; RA = sbc8(RA|0, immediate8()|0)|0; PC=(PC+1)|0; return 8};
    // DF - RST 18H
@@ -824,9 +824,9 @@ var Z80 = function(stdlib, foreign){
    // E2 - LD (C),A
    function instE2(){putAddress((255 << 8) + RC|0, RA|0); PC=(PC+1)|0; return 8};
    // E3 - 
-   function instE3(){return 0;};
+   function instE3(){return 1;};
    // E4 - 
-   function instE4(){return 0;};
+   function instE4(){return 1;};
    // E5 - PUSH HL
    function instE5(){RSP=RSP-2|0; putAddress16(RSP|0, RHL|0); PC=(PC+1)|0; return 16};
    // E6 - AND d8
@@ -840,11 +840,11 @@ var Z80 = function(stdlib, foreign){
    // EA - LD (a16),A
    function instEA(){PC=(PC+1)|0; putAddress(immediate16()|0, RA|0)|0; PC=(PC+2)|0; return 16};
    // EB - 
-   function instEB(){return 0;};
+   function instEB(){return 1;};
    // EC - 
-   function instEC(){return 0;};
+   function instEC(){return 1;};
    // ED - 
-   function instED(){return 0;};
+   function instED(){return 1;};
    // EE - XOR A,d8
    function instEE(){PC=(PC+1)|0; RA = xor8(RA|0, immediate8()|0)|0; PC=(PC+1)|0; return 8};
    // EF - RST 28H
@@ -859,7 +859,7 @@ var Z80 = function(stdlib, foreign){
    // F3 - DI
    function instF3(){IME = 0; PC=(PC+1)|0; return 4};
    // F4 - 
-   function instF4(){return 0;};
+   function instF4(){return 1;};
    // F5 - PUSH AF
    function instF5(){RSP=RSP-2|0; putAddress16(RSP|0, (RA << 8) | (FZ << 7) | (FN << 6) | (FH << 5) | (FC << 4)); PC=(PC+1)|0; return 16};
    // F6 - OR d8
@@ -875,9 +875,9 @@ var Z80 = function(stdlib, foreign){
    // FB - EI
    function instFB(){IME = 1; PC=(PC+1)|0; checkForInterrupts(); return 4};
    // FC - 
-   function instFC(){return 0;};
+   function instFC(){return 1;};
    // FD - 
-   function instFD(){return 0;};
+   function instFD(){return 1;};
    // FE - CP d8
    function instFE(){PC=(PC+1)|0; sub8(RA|0, immediate8()|0)|0; PC=(PC+1)|0; return 8};
    // FF - RST 38H

@@ -34,6 +34,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 		<!-- Replace favicon.ico & apple-touch-icon.png in the root of your domain and delete these references -->
 		<link rel="stylesheet" href="style.css" />
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@48,400,0,0" />
 		<link rel="shortcut icon" href="/favicon.ico" />
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		
@@ -49,27 +50,30 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			</header>
 
 			<div class="left-column">
-			
-				<div class="box display">
-					<canvas id="display" width="160" height="144" onclick="pause()" style="width: 320px; height: 288px;"></canvas>
-					<div id="fps"></div>
+				<div class="gb">
+					<div class="display">
+						<canvas id="display" width="160" height="144" style="width: 320px; height: 288px;"></canvas>
+						<div id="fps"></div>
+					</div>
+					<div class="controls">
+						<div id="key-up" class="material-symbols-outlined">arrow_upward</div>
+						<div id="key-down" class="material-symbols-outlined">arrow_downward</div>
+						<div id="key-left" class="material-symbols-outlined">arrow_back</div>
+						<div id="key-right" class="material-symbols-outlined">arrow_forward</div>
+						<div id="key-select">Q</div>
+						<div id="key-start">W</div>
+						<div id="key-a">S</div>
+						<div id="key-b">A</div>
+					</div>
+					<div class="emulator-controls">
+						<div id="pause-button" class="button material-symbols-outlined" onclick="pause()">pause</div>
+						<div>
+							<span class="material-symbols-outlined">volume_up</span>
+							<input type="range" min="0" max="100" value="20" step="1" oninput="gb.setAudioVolume(this.value / 100)">
+						</div>
+					</div>
 				</div>
-				<div class="box controls">
-					<table>
-						<tr>
-							<td>Q</td><td>Select</td>
-							<td>W</td><td>Start</td>
-							<td>A</td><td>B</td>
-							<td>S</td><td>A</td>
-						</tr>
-						<tr>
-							<td>&uarr;</td><td>Up</td>
-							<td>&darr;</td><td>Down</td>
-							<td>&larr;</td><td>Left</td>
-							<td>&rarr;</td><td>Right</td>
-						</tr>
-					</table>
-				</div>
+				
 				<div class="copyright">
 					<a href="http://www.alexaladren.net">Alejandro Aladr&eacute;n</a> |
 					<a href="mailto:alex@alexaladren.net">alex@alexaladren.net</a> | 
@@ -80,18 +84,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 			</div>
 			<div class="right-column">
 			
-				<div class="box select">
-					<div id="romlist">
-						
-					</div>
-					<div class="button" id="addfrompc" onclick="addROMfromComputer(event)">Add a ROM from your PC</div>
-				</div>
+				<div class="button" id="addfrompc" onclick="addROMfromComputer(event)">Add a ROM from your PC</div>
 				
-				<div class="box data" id="cartridge-data" style="display: none;">
+				<div id="cartridge-data" style="display: none;">
 					<div id="title" class="title"></div>
 					<div id="cartridge"></div>
-					<input type="button" id="save" value="Guardar" onclick="saveCartridgeRam()" style="display: none;" />
-					<input type="button" id="delete" value="Eliminar partida" onclick="deleteCartridgeRam()" style="display: none;" />
+					<input type="button" id="delete" value="Delete save" onclick="deleteCartridgeRam()" style="display: none;" />
 				</div>
 				
 			</div>

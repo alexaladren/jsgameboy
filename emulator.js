@@ -19,39 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 var title;
-
-function getROMlist(){
-   var http = new XMLHttpRequest();
-   http.open("GET","data.php?d=roms");
-   http.onreadystatechange = function(){
-      if(http.readyState == 4 && http.status == 200){
-         var romlist = document.getElementById("romlist");
-         var data = JSON.parse(http.responseText);
-         for(var i = 0; i < data.length; i++){
-            var div = document.createElement("div");
-            div.data = data[i];
-            div.innerHTML = data[i].name;
-            div.onclick = function(){
-               downloadROM(this.data.file);
-            }
-            romlist.appendChild(div);
-         }
-      }
-   }
-   http.send();
-}
-
-function downloadROM(name){
-   var http = new XMLHttpRequest();
-   http.open("GET","roms/"+name);
-   http.responseType = "arraybuffer";
-   http.onreadystatechange = function(){
-      if(http.readyState == 4 && http.status == 200){
-         loadROM(http.response);
-      }
-   }
-   http.send();
-}
+var rom;
 
 function addROMfromComputer(ev){
    rominput = document.createElement("input");
@@ -65,7 +33,8 @@ function loadROMfromComputer(ev){
    var reader = new FileReader();
    
    reader.onload = function(ev){
-      loadROM(this.result);
+      rom = this.result;
+      loadROM(rom);
    }
    
    reader.readAsArrayBuffer(ev.target.files[0]);
@@ -74,8 +43,8 @@ function loadROMfromComputer(ev){
 function loadROM(arraybuffer){
    
    if(window.gb != undefined){
-      clearInterval(gb.interval);
-      document.getElementById("display").getContext("2d").setTransform(1,0,0,1,0,0);
+      gb.stop();
+      gb = null;
    }
    
    gb = new GameBoy(arraybuffer, document.getElementById("display"));
@@ -109,23 +78,22 @@ function loadROM(arraybuffer){
    document.getElementById("cartridge-data").style.display = "";
    
    if(gb.ramSpace > 0){
-      document.getElementById("save").style.display = "";
-      document.getElementById("delete").style.display = "none";
+      document.getElementById("delete").style.display = "";
       
       if(localStorage.getItem(title) != null){
-         document.getElementById("delete").style.display = "";
-         
          var data = window.atob(localStorage.getItem(title));
          gb.setCartridgeRam(data);
       }
       
    }else{
-      document.getElementById("save").style.display = "none";
       document.getElementById("delete").style.display = "none";
    }
 
    gb.onFPS = function(msg){
       document.getElementById("fps").innerHTML = msg;
+      if (gb.ramSpace > 0) {
+         saveCartridgeRam();
+      }
    }
    
    gb.init();
@@ -134,72 +102,66 @@ function loadROM(arraybuffer){
 function pause(){
    gb.pause();
    if(gb.paused){
-      document.getElementById("display").style.opacity = 0.5;
+      document.getElementById("pause-button").style.backgroundColor = "#ff7735";
    }else{
-      document.getElementById("display").style.opacity = 1;
+      document.getElementById("pause-button").style.backgroundColor = "";
    }
 }
 
 function keyPress(ev){
    if(ev.keyCode == 37){ // Izquierda
       gb.keyPressed(2);
+      document.getElementById("key-left").classList.add('pressed');
    }else if(ev.keyCode == 38){ // Arriba
       gb.keyPressed(4);
+      document.getElementById("key-up").classList.add('pressed');
    }else if(ev.keyCode == 39){ // Derecha
       gb.keyPressed(1);
+      document.getElementById("key-right").classList.add('pressed');
    }else if(ev.keyCode == 40){ // Abajo
       gb.keyPressed(8);
+      document.getElementById("key-down").classList.add('pressed');
    }else if(ev.keyCode == 65){ // B
       gb.keyPressed(32);
+      document.getElementById("key-b").classList.add('pressed');
    }else if(ev.keyCode == 83){ // A
       gb.keyPressed(16);
+      document.getElementById("key-a").classList.add('pressed');
    }else if(ev.keyCode == 87){ // Start
       gb.keyPressed(128);
+      document.getElementById("key-start").classList.add('pressed');
    }else if(ev.keyCode == 81){ // Select
       gb.keyPressed(64);
+      document.getElementById("key-select").classList.add('pressed');
    }
 }
 
 function keyRelease(ev){
    if(ev.keyCode == 37){ // Izquierda
       gb.keyReleased(2);
+      document.getElementById("key-left").classList.remove('pressed');
    }else if(ev.keyCode == 38){ // Arriba
       gb.keyReleased(4);
+      document.getElementById("key-up").classList.remove('pressed');
    }else if(ev.keyCode == 39){ // Derecha
       gb.keyReleased(1);
+      document.getElementById("key-right").classList.remove('pressed');
    }else if(ev.keyCode == 40){ // Abajo
       gb.keyReleased(8);
+      document.getElementById("key-down").classList.remove('pressed');
    }else if(ev.keyCode == 65){ // B
       gb.keyReleased(32);
+      document.getElementById("key-b").classList.remove('pressed');
    }else if(ev.keyCode == 83){ // A
       gb.keyReleased(16);
-   }else if(ev.keyCode == 81){ // Start
+      document.getElementById("key-a").classList.remove('pressed');
+   }else if(ev.keyCode == 87){ // Start
       gb.keyReleased(128);
-   }else if(ev.keyCode == 87){ // Select
+      document.getElementById("key-start").classList.remove('pressed');
+   }else if(ev.keyCode == 81){ // Select
       gb.keyReleased(64);
+      document.getElementById("key-select").classList.remove('pressed');
    }
-}
-
-function toHex(number){
-   var result = "";
-   if(number == 0) result = "0";
-   while(number != 0){
-      switch(number % 16){
-         case 10: result += "A"; break;
-         case 11: result += "B"; break;
-         case 12: result += "C"; break;
-         case 13: result += "D"; break;
-         case 14: result += "E"; break;
-         case 15: result += "F"; break;
-         default: result += number % 16;
-      }
-      number = Math.floor(number/16);
-   }
-   var result2 = "";
-   for(var i = result.length; i > 0; i--){
-      result2 += result.charAt(i-1);
-   }
-   return result2;
 }
 
 function saveCartridgeRam(){
@@ -211,12 +173,11 @@ function saveCartridgeRam(){
 }
 
 function deleteCartridgeRam(){
-   if(window.confirm("¿Estás seguro de que quieres eliminar tu partida guardada y reiniciar el juego?")){
+   if(window.confirm("Are you sure you want to delete your save and restart the game?")){
       localStorage.removeItem(title);
-      loadROM(rommap);
+      loadROM(rol);
    }
 }
 
-window.onload = getROMlist;
 window.onkeydown = keyPress;
 window.onkeyup = keyRelease;

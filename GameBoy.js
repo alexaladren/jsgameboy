@@ -81,6 +81,7 @@ var GameBoy = function(rom, canvas){
    this.divider = 0;
    this.timer = 0;
    
+   this.stopped = false;
    this.paused = false;
    this.fps = 0;
    
@@ -124,6 +125,7 @@ var GameBoy = function(rom, canvas){
    this.audioMaster.connect(this.audioContext.destination);
 
    this.audioEnabled = false;
+   this.audioVolume = 0.2;
 
    this.audioChannel1Wave = new OscillatorNode(this.audioContext, { type: "square" })
    this.audioChannel1Volume = new GainNode(this.audioContext, { gain: 0 });
@@ -218,8 +220,17 @@ var GameBoy = function(rom, canvas){
 
       }else{
          this.paused = false;
-         this.audioMaster.gain.value = 0.2;
+         this.audioMaster.gain.value = this.audioVolume;
       }
+   }
+
+   this.stop = function () {
+      this.stopped = true;
+      this.pause();
+      this.audioChannel1Wave.stop();
+      this.audioChannel2Wave.stop();
+      this.audioChannel3Wave.stop();
+      this.audioChannel4Wave.stop();
    }
    
    this.setCartridgeRam = function(datastring){
@@ -232,9 +243,10 @@ var GameBoy = function(rom, canvas){
 
    this.execute = function(){
       var _this = this;
+      if (this.stopped) return;
       this.interval = requestAnimationFrame(function(){_this.execute()});
       // 4213440 ticks per second
-      if(this.paused) return;
+      if (this.paused) return;
       //console.time("frame");
       //this.transferClock();
       for(var i = 0; i < 144; i++){
@@ -317,6 +329,13 @@ var GameBoy = function(rom, canvas){
    
    this.keyReleased = function(key){
       this.keys |= key;
+   }
+
+   this.setAudioVolume = function (value) {
+      this.audioVolume = value;
+      if (!this.paused) {
+         this.audioMaster.gain.value = this.audioVolume;
+      }
    }
    
    /*this.transferIn = function(data){
